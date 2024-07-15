@@ -18,9 +18,9 @@ OPT MODULE, OSVERSION=37
         'intuition/imageclass',
         'intuition/gadgetclass'
 
-  MODULE '*reactionObject','*reactionForm','*sourceGen'
+  MODULE '*reactionObject','*reactionForm','*sourceGen','*validator'
 
-EXPORT ENUM SLDGAD_NAME, SLDGAD_MIN, SLDGAD_MAX, SLDGAD_LEVEL, SLDGAD_TICKS,SLDGAD_TICKSIZE,
+EXPORT ENUM SLDGAD_IDENT, SLDGAD_NAME, SLDGAD_HINT, SLDGAD_MIN, SLDGAD_MAX, SLDGAD_LEVEL, SLDGAD_TICKS,SLDGAD_TICKSIZE,
       SLDGAD_MAXLEN, SLDGAD_SHORTTICKS,
       SLDGAD_INVERT, SLDGAD_ORIENTATION, SLDGAD_LEVELPLACE, SLDGAD_LEVELJUSTIFY, SLDGAD_DISABLED,
 
@@ -88,15 +88,37 @@ PROC create() OF sliderSettingsForm
     LAYOUT_SPACEOUTER, TRUE,
     LAYOUT_DEFERLAYOUT, TRUE,
 
-      LAYOUT_ADDCHILD, self.gadgetList[ SLDGAD_NAME ]:=StringObject,
-        GA_ID, SLDGAD_NAME,
-        GA_RELVERIFY, TRUE,
-        GA_TABCYCLE, TRUE,
-        STRINGA_MAXCHARS, 80,
-      StringEnd,
-      CHILD_LABEL, LabelObject,
-        LABEL_TEXT, '_Name',
-      LabelEnd,
+
+      LAYOUT_ADDCHILD, LayoutObject,
+        LAYOUT_ORIENTATION, LAYOUT_ORIENT_HORIZ,
+        LAYOUT_ADDCHILD, self.gadgetList[ SLDGAD_IDENT ]:=StringObject,
+          GA_ID, SLDGAD_IDENT,
+          GA_RELVERIFY, TRUE,
+          GA_TABCYCLE, TRUE,
+          STRINGA_MAXCHARS, 80,
+        StringEnd,
+        CHILD_LABEL, LabelObject,
+          LABEL_TEXT, 'Identifier',
+        LabelEnd,
+
+        LAYOUT_ADDCHILD, self.gadgetList[ SLDGAD_NAME ]:=StringObject,
+          GA_ID, SLDGAD_NAME,
+          GA_RELVERIFY, TRUE,
+          GA_TABCYCLE, TRUE,
+          STRINGA_MAXCHARS, 80,
+        StringEnd,
+        CHILD_LABEL, LabelObject,
+          LABEL_TEXT, 'Label',
+        LabelEnd,
+
+        LAYOUT_ADDCHILD,  self.gadgetList[ SLDGAD_HINT ]:=ButtonObject,
+          GA_ID, SLDGAD_HINT,
+          GA_TEXT, 'Hint',
+          GA_RELVERIFY, TRUE,
+          GA_TABCYCLE, TRUE,
+        ButtonEnd,           
+        CHILD_WEIGHTEDWIDTH,50,
+      LayoutEnd,
 
       LAYOUT_ADDCHILD, LayoutObject,
         LAYOUT_ORIENTATION, LAYOUT_ORIENT_HORIZ,
@@ -277,6 +299,7 @@ PROC create() OF sliderSettingsForm
   WindowEnd
 
   self.gadgetActions[SLDGAD_CHILD]:={editChildSettings}
+  self.gadgetActions[SLDGAD_HINT]:={editHint}  
   self.gadgetActions[SLDGAD_CANCEL]:=MR_CANCEL
   self.gadgetActions[SLDGAD_OK]:=MR_OK
 ENDPROC
@@ -296,11 +319,30 @@ PROC end() OF sliderSettingsForm
   END self.gadgetActions[NUM_SLD_GADS]
 ENDPROC
 
+EXPORT PROC canClose(modalRes) OF sliderSettingsForm
+  DEF res
+  IF modalRes=MR_CANCEL THEN RETURN TRUE
+  
+  IF checkIdent(self,self.sliderObject,SLDGAD_IDENT)=FALSE
+    RETURN FALSE
+  ENDIF
+ENDPROC TRUE
+
+PROC editHint(nself,gadget,id,code) OF sliderSettingsForm
+  self:=nself
+  self.setBusy()
+  self.sliderObject.editHint()
+  self.clearBusy()
+  self.updateHint(SLDGAD_HINT, self.sliderObject.hintText)
+ENDPROC
+
 PROC editSettings(comp:PTR TO sliderObject) OF sliderSettingsForm
   DEF res
 
   self.sliderObject:=comp
   
+  self.updateHint(SLDGAD_HINT, comp.hintText) 
+  SetGadgetAttrsA(self.gadgetList[ SLDGAD_IDENT ],0,0,[STRINGA_TEXTVAL,comp.ident,0])
   SetGadgetAttrsA(self.gadgetList[ SLDGAD_NAME ],0,0,[STRINGA_TEXTVAL,comp.name,0])
   SetGadgetAttrsA(self.gadgetList[ SLDGAD_MIN ],0,0,[INTEGER_NUMBER,comp.min,0])
   SetGadgetAttrsA(self.gadgetList[ SLDGAD_MAX ],0,0,[INTEGER_NUMBER,comp.max,0])
@@ -319,6 +361,7 @@ PROC editSettings(comp:PTR TO sliderObject) OF sliderSettingsForm
 
   res:=self.showModal()
   IF res=MR_OK
+    AstrCopy(comp.ident,Gets(self.gadgetList[ SLDGAD_IDENT ],STRINGA_TEXTVAL))
     AstrCopy(comp.name,Gets(self.gadgetList[ SLDGAD_NAME ],STRINGA_TEXTVAL))
     comp.min:=Gets(self.gadgetList[ SLDGAD_MIN ],INTEGER_NUMBER)
     comp.max:=Gets(self.gadgetList[ SLDGAD_MAX ],INTEGER_NUMBER)
@@ -340,6 +383,7 @@ ENDPROC res
 
 EXPORT PROC createPreviewObject(scr) OF sliderObject
   self.previewObject:=SliderObject, 
+      GA_ID, self.id,
       GA_RELVERIFY, TRUE,
       GA_DISABLED, self.disabled,
       SLIDER_MIN, self.min,

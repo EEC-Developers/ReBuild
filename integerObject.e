@@ -17,9 +17,9 @@ OPT MODULE, OSVERSION=37
         'intuition/imageclass',
         'intuition/gadgetclass'
 
-  MODULE '*reactionObject','*reactionForm','*sourceGen'
+  MODULE '*reactionObject','*reactionForm','*sourceGen','*validator'
 
-EXPORT ENUM INTGAD_NAME, INTGAD_MAXCHARS, INTGAD_VALUE,INTGAD_MINVISIBLE,
+EXPORT ENUM INTGAD_IDENT, INTGAD_NAME,INTGAD_HINT, INTGAD_MAXCHARS, INTGAD_VALUE,INTGAD_MINVISIBLE,
       INTGAD_MINIMUM, INTGAD_MAXIMUM,
       INTGAD_DISABLED, INTGAD_TABCYCLE, INTGAD_ARROWS,
       INTGAD_OK, INTGAD_CHILD, INTGAD_CANCEL
@@ -79,6 +79,26 @@ PROC create() OF integerSettingsForm
 
       LAYOUT_ADDCHILD, LayoutObject,
         LAYOUT_ORIENTATION, LAYOUT_ORIENT_HORIZ,
+        LAYOUT_ADDCHILD, self.gadgetList[ INTGAD_IDENT ]:=StringObject,
+          GA_ID, INTGAD_IDENT,
+          GA_RELVERIFY, TRUE,
+          GA_TABCYCLE, TRUE,
+          STRINGA_MAXCHARS, 80,
+        StringEnd,
+        CHILD_LABEL, LabelObject,
+          LABEL_TEXT, 'Identifier',
+        LabelEnd,
+        LAYOUT_ADDCHILD,  self.gadgetList[ INTGAD_HINT ]:=ButtonObject,
+          GA_ID, INTGAD_HINT,
+          GA_TEXT, 'Hint',
+          GA_RELVERIFY, TRUE,
+          GA_TABCYCLE, TRUE,
+        ButtonEnd,          
+        
+      LayoutEnd,
+
+      LAYOUT_ADDCHILD, LayoutObject,
+        LAYOUT_ORIENTATION, LAYOUT_ORIENT_HORIZ,
 
         LAYOUT_ADDCHILD, self.gadgetList[ INTGAD_NAME ]:=StringObject,
           GA_ID, INTGAD_NAME,
@@ -87,7 +107,7 @@ PROC create() OF integerSettingsForm
           STRINGA_MAXCHARS, 80,
         StringEnd,
         CHILD_LABEL, LabelObject,
-          LABEL_TEXT, 'Integer _Name',
+          LABEL_TEXT, '_Label',
         LabelEnd,
         
         LAYOUT_ADDCHILD,  self.gadgetList[ INTGAD_MAXCHARS ]:=IntegerObject,
@@ -213,6 +233,7 @@ PROC create() OF integerSettingsForm
   WindowEnd
 
   self.gadgetActions[INTGAD_CHILD]:={editChildSettings}
+  self.gadgetActions[INTGAD_HINT]:={editHint}  
   self.gadgetActions[INTGAD_CANCEL]:=MR_CANCEL
   self.gadgetActions[INTGAD_OK]:=MR_OK
 ENDPROC
@@ -229,11 +250,30 @@ PROC end() OF integerSettingsForm
   END self.gadgetActions[NUM_INT_GADS]
 ENDPROC
 
+EXPORT PROC canClose(modalRes) OF integerSettingsForm
+  DEF res
+  IF modalRes=MR_CANCEL THEN RETURN TRUE
+  
+  IF checkIdent(self,self.integerObject,INTGAD_IDENT)=FALSE
+    RETURN FALSE
+  ENDIF
+ENDPROC TRUE
+
+PROC editHint(nself,gadget,id,code) OF integerSettingsForm
+  self:=nself
+  self.setBusy()
+  self.integerObject.editHint()
+  self.clearBusy()
+  self.updateHint(INTGAD_HINT, self.integerObject.hintText)
+ENDPROC
+
 PROC editSettings(comp:PTR TO integerObject) OF integerSettingsForm
   DEF res
   
   self.integerObject:=comp
-  
+
+  self.updateHint(INTGAD_HINT, comp.hintText)
+  SetGadgetAttrsA(self.gadgetList[ INTGAD_IDENT ],0,0,[STRINGA_TEXTVAL,comp.ident,0])
   SetGadgetAttrsA(self.gadgetList[ INTGAD_NAME ],0,0,[STRINGA_TEXTVAL,comp.name,0])
   SetGadgetAttrsA(self.gadgetList[ INTGAD_MAXCHARS ],0,0,[INTEGER_NUMBER,comp.maxChars,0])
   SetGadgetAttrsA(self.gadgetList[ INTGAD_VALUE ],0,0,[INTEGER_NUMBER,comp.value,0])
@@ -246,6 +286,7 @@ PROC editSettings(comp:PTR TO integerObject) OF integerSettingsForm
 
   res:=self.showModal()
   IF res=MR_OK
+    AstrCopy(comp.ident,Gets(self.gadgetList[ INTGAD_IDENT ],STRINGA_TEXTVAL))
     AstrCopy(comp.name,Gets(self.gadgetList[ INTGAD_NAME ],STRINGA_TEXTVAL))
     comp.maxChars:=Gets(self.gadgetList[ INTGAD_MAXCHARS ],INTEGER_NUMBER)
     comp.value:=Gets(self.gadgetList[ INTGAD_VALUE ],INTEGER_NUMBER)
@@ -260,6 +301,7 @@ ENDPROC res=MR_OK
 
 EXPORT PROC createPreviewObject(scr) OF integerObject
   self.previewObject:=IntegerObject,
+      GA_ID, self.id,
       GA_RELVERIFY, TRUE,
       GA_TABCYCLE, self.tabCycle,
       GA_DISABLED, self.disabled,

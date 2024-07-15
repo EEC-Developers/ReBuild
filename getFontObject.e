@@ -18,9 +18,9 @@ OPT MODULE, OSVERSION=37
         'intuition/imageclass',
         'intuition/gadgetclass'
 
-  MODULE '*reactionObject','*reactionForm','*sourceGen'
+  MODULE '*reactionObject','*reactionForm','*sourceGen','*validator'
 
-EXPORT ENUM GETFONTGAD_NAME, GETFONTGAD_TITLE,
+EXPORT ENUM GETFONTGAD_IDENT, GETFONTGAD_NAME, GETFONTGAD_HINT, GETFONTGAD_TITLE,
             GETFONTGAD_LEFT, GETFONTGAD_TOP, GETFONTGAD_WIDTH, GETFONTGAD_HEIGHT, 
             GETFONTGAD_MINHEIGHT, GETFONTGAD_MAXHEIGHT, GETFONTGAD_MAXFRONT, GETFONTGAD_MAXBACK, 
             GETFONTGAD_DOFRONTPEN, GETFONTGAD_DOBACKPEN, GETFONTGAD_DOSTYLE,
@@ -90,16 +90,39 @@ PROC create() OF getFontSettingsForm
     LAYOUT_SPACEOUTER, TRUE,
     LAYOUT_DEFERLAYOUT, TRUE,
 
-      LAYOUT_ADDCHILD, self.gadgetList[ GETFONTGAD_NAME ]:=StringObject,
-        GA_ID, GETFONTGAD_NAME,
-        GA_RELVERIFY, TRUE,
-        GA_TABCYCLE, TRUE,
-        STRINGA_MAXCHARS, 80,
-      StringEnd,
+      LAYOUT_ADDCHILD, LayoutObject,
+        LAYOUT_ORIENTATION, LAYOUT_ORIENT_HORIZ,
 
-      CHILD_LABEL, LabelObject,
-        LABEL_TEXT, 'GetFont _Name',
-      LabelEnd,
+        LAYOUT_ADDCHILD, self.gadgetList[ GETFONTGAD_IDENT ]:=StringObject,
+          GA_ID, GETFONTGAD_IDENT,
+          GA_RELVERIFY, TRUE,
+          GA_TABCYCLE, TRUE,
+          STRINGA_MAXCHARS, 80,
+        StringEnd,
+
+        CHILD_LABEL, LabelObject,
+          LABEL_TEXT, 'Identifier',
+        LabelEnd,
+
+        LAYOUT_ADDCHILD, self.gadgetList[ GETFONTGAD_NAME ]:=StringObject,
+          GA_ID, GETFONTGAD_NAME,
+          GA_RELVERIFY, TRUE,
+          GA_TABCYCLE, TRUE,
+          STRINGA_MAXCHARS, 80,
+        StringEnd,
+
+        CHILD_LABEL, LabelObject,
+          LABEL_TEXT, '_Label',
+        LabelEnd,
+
+        LAYOUT_ADDCHILD,  self.gadgetList[ GETFONTGAD_HINT ]:=ButtonObject,
+          GA_ID, GETFONTGAD_HINT,
+          GA_TEXT, 'Hint',
+          GA_RELVERIFY, TRUE,
+          GA_TABCYCLE, TRUE,
+        ButtonEnd,       
+        CHILD_WEIGHTEDWIDTH,50,            
+      LayoutEnd,
 
       LAYOUT_ADDCHILD, self.gadgetList[ GETFONTGAD_TITLE ]:=StringObject,
         GA_ID, GETFONTGAD_TITLE,
@@ -293,6 +316,7 @@ PROC create() OF getFontSettingsForm
   WindowEnd
 
   self.gadgetActions[GETFONTGAD_CHILD]:={editChildSettings}
+  self.gadgetActions[GETFONTGAD_HINT]:={editHint}
   self.gadgetActions[GETFONTGAD_CANCEL]:=MR_CANCEL
   self.gadgetActions[GETFONTGAD_OK]:=MR_OK
 ENDPROC
@@ -309,11 +333,30 @@ PROC end() OF getFontSettingsForm
   END self.gadgetActions[NUM_GETFONT_GADS]
 ENDPROC
 
+EXPORT PROC canClose(modalRes) OF getFontSettingsForm
+  DEF res
+  IF modalRes=MR_CANCEL THEN RETURN TRUE
+  
+  IF checkIdent(self,self.getFontObject,GETFONTGAD_IDENT)=FALSE
+    RETURN FALSE
+  ENDIF
+ENDPROC TRUE
+
+PROC editHint(nself,gadget,id,code) OF getFontSettingsForm
+  self:=nself
+  self.setBusy()
+  self.getFontObject.editHint()
+  self.clearBusy()
+  self.updateHint(GETFONTGAD_HINT, self.getFontObject.hintText)
+ENDPROC
+
 PROC editSettings(comp:PTR TO getFontObject) OF getFontSettingsForm
   DEF res
 
   self.getFontObject:=comp
 
+  self.updateHint(GETFONTGAD_HINT, comp.hintText)
+  SetGadgetAttrsA(self.gadgetList[ GETFONTGAD_IDENT ],0,0,[STRINGA_TEXTVAL,comp.ident,0])
   SetGadgetAttrsA(self.gadgetList[ GETFONTGAD_NAME ],0,0,[STRINGA_TEXTVAL,comp.name,0])
   SetGadgetAttrsA(self.gadgetList[ GETFONTGAD_TITLE ],0,0,[STRINGA_TEXTVAL,comp.title,0])
 
@@ -336,6 +379,7 @@ PROC editSettings(comp:PTR TO getFontObject) OF getFontSettingsForm
   res:=self.showModal()
   IF res=MR_OK
     
+    AstrCopy(comp.ident,Gets(self.gadgetList[ GETFONTGAD_IDENT ],STRINGA_TEXTVAL))
     AstrCopy(comp.name,Gets(self.gadgetList[ GETFONTGAD_NAME ],STRINGA_TEXTVAL))
     AstrCopy(comp.title,Gets(self.gadgetList[ GETFONTGAD_TITLE ],STRINGA_TEXTVAL))
 
@@ -359,6 +403,7 @@ ENDPROC res=MR_OK
 
 EXPORT PROC createPreviewObject(scr) OF getFontObject
   self.previewObject:=GetFontObject,
+    GA_ID, self.id,
     GA_RELVERIFY, TRUE,
     GA_TABCYCLE, TRUE,
   TAG_DONE])

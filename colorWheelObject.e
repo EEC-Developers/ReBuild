@@ -17,9 +17,9 @@ OPT MODULE, OSVERSION=37
         'intuition/imageclass',
         'intuition/gadgetclass'
 
-  MODULE '*reactionObject','*reactionForm','*sourcegen'
+  MODULE '*reactionObject','*reactionForm','*sourcegen','*validator'
 
-EXPORT ENUM CWHEELGAD_BEVELBOX,
+EXPORT ENUM CWHEELGAD_IDENT, CWHEELGAD_HINT, CWHEELGAD_BEVELBOX,
       CWHEELGAD_OK, CWHEELGAD_CHILD, CWHEELGAD_CANCEL
       
 
@@ -67,6 +67,27 @@ PROC create() OF colorWheelSettingsForm
     LAYOUT_SPACEOUTER, TRUE,
     LAYOUT_DEFERLAYOUT, TRUE,
 
+      LAYOUT_ADDCHILD, LayoutObject,
+        LAYOUT_ORIENTATION, LAYOUT_ORIENT_HORIZ,
+
+        LAYOUT_ADDCHILD, self.gadgetList[ CWHEELGAD_IDENT ]:=StringObject,
+          GA_ID, CWHEELGAD_IDENT,
+          GA_RELVERIFY, TRUE,
+          GA_TABCYCLE, TRUE,
+          STRINGA_MAXCHARS, 80,
+        StringEnd,
+        CHILD_LABEL, LabelObject,
+          LABEL_TEXT, '_Identifier',
+        LabelEnd,
+
+        LAYOUT_ADDCHILD,  self.gadgetList[ CWHEELGAD_HINT ]:=ButtonObject,
+          GA_ID, CWHEELGAD_HINT,
+          GA_TEXT, 'Hint',
+          GA_RELVERIFY, TRUE,
+          GA_TABCYCLE, TRUE,
+        ButtonEnd,      
+      LayoutEnd,
+
       LAYOUT_ADDCHILD, self.gadgetList[ CWHEELGAD_BEVELBOX ]:=CheckBoxObject,
         GA_ID, CWHEELGAD_BEVELBOX,
         GA_RELVERIFY, TRUE,
@@ -104,8 +125,17 @@ PROC create() OF colorWheelSettingsForm
   WindowEnd
 
   self.gadgetActions[CWHEELGAD_CHILD]:={editChildSettings}
+  self.gadgetActions[CWHEELGAD_HINT]:={editHint}
   self.gadgetActions[CWHEELGAD_CANCEL]:=MR_CANCEL
   self.gadgetActions[CWHEELGAD_OK]:=MR_OK
+ENDPROC
+
+PROC editHint(nself,gadget,id,code) OF colorWheelSettingsForm
+  self:=nself
+  self.setBusy()
+  self.colorWheelObject.editHint()
+  self.clearBusy()
+  self.updateHint(CWHEELGAD_HINT, self.colorWheelObject.hintText)
 ENDPROC
 
 PROC editChildSettings(nself,gadget,id,code) OF colorWheelSettingsForm
@@ -121,15 +151,26 @@ PROC end() OF colorWheelSettingsForm
   END self.gadgetActions[NUM_CWHEEL_GADS]
 ENDPROC
 
+EXPORT PROC canClose(modalRes) OF colorWheelSettingsForm
+  DEF res
+  IF modalRes=MR_CANCEL THEN RETURN TRUE
+  
+  IF checkIdent(self,self.colorWheelObject,CWHEELGAD_IDENT)=FALSE
+    RETURN FALSE
+  ENDIF
+ENDPROC TRUE
+
 PROC editSettings(comp:PTR TO colorWheelObject) OF colorWheelSettingsForm
   DEF res
 
   self.colorWheelObject:=comp
     
   SetGadgetAttrsA(self.gadgetList[ CWHEELGAD_BEVELBOX ],0,0,[CHECKBOX_CHECKED,comp.bevelBox,0]) 
+  SetGadgetAttrsA(self.gadgetList[ CWHEELGAD_IDENT ],0,0,[STRINGA_TEXTVAL,comp.ident,0])
 
   res:=self.showModal()
   IF res=MR_OK
+    AstrCopy(comp.ident,Gets(self.gadgetList[ CWHEELGAD_IDENT ],STRINGA_TEXTVAL))
     comp.bevelBox:=Gets(self.gadgetList[ CWHEELGAD_BEVELBOX ],CHECKBOX_CHECKED)   
   ENDIF
 ENDPROC res=MR_OK
@@ -138,6 +179,7 @@ EXPORT PROC createPreviewObject(scr) OF colorWheelObject
   self.previewObject:=0
   IF (colorwheelbase)
     self.previewObject:=ColorWheelObject,
+        GA_ID, self.id,
         WHEEL_SCREEN, scr,
         WHEEL_BEVELBOX, self.bevelBox,
       ColorWheelEnd

@@ -51,10 +51,10 @@ OPT OSVERSION=37,LARGE
          '*stringObject','*integerObject','*stringlist','*reactionObject','*reactionForm','*boingBallObject',
          '*penMapObject','*sliderObject','*bitmapObject','*speedBarObject','*colorWheelObject','*dateBrowserObject',
          '*getColorObject','*gradSliderObject','*tapeDeckObject','*textEditorObject','*ledObject','*listViewObject',
-         '*virtualObject','*sketchboardObject','*tabsObject'
+         '*virtualObject','*sketchboardObject','*tabsObject','*requesterObject'
 
-#define vernum '1.1.1-dev'
-#date verstring '$VER:Rebuild 1.1.1-%Y%m%d%h%n%s'
+#define vernum '1.2.0-dev'
+#date verstring '$VER:Rebuild 1.2.0-%Y%m%d%h%n%s'
 
 #ifndef EVO_3_7_0
   FATAL 'Rebuild should only be compiled with E-VO Amiga E Compiler v3.7.0 or higher'
@@ -62,10 +62,11 @@ OPT OSVERSION=37,LARGE
 
   CONST ROOT_APPLICATION_ITEM=0
   CONST ROOT_REXX_ITEM=1
-  CONST ROOT_SCREEN_ITEM=2
-  CONST ROOT_WINDOW_ITEM=3
-  CONST ROOT_MENU_ITEM=4
-  CONST ROOT_LAYOUT_ITEM=5
+  CONST ROOT_REQUESTER_ITEM=2
+  CONST ROOT_SCREEN_ITEM=3
+  CONST ROOT_WINDOW_ITEM=4
+  CONST ROOT_MENU_ITEM=5
+  CONST ROOT_LAYOUT_ITEM=6
 
   ENUM GAD_COMPONENTLIST,GAD_TEMP_COPYTO, GAD_TEMP_COPYFROM, GAD_TEMP_MOVETO, GAD_TEMP_MOVEFROM, GAD_TEMP_REMOVE, GAD_TEMPLIST, GAD_ADD, GAD_GENMINUS, GAD_GENPLUS, GAD_DELETE, GAD_MOVEUP, GAD_MOVEDOWN, 
        GAD_LISTS, GAD_CODE, GAD_LOAD, GAD_SAVE, GAD_NEW
@@ -83,10 +84,11 @@ OPT OSVERSION=37,LARGE
   CONST MENU_PROJECT_LOAD=1
   CONST MENU_PROJECT_SAVE=2
   CONST MENU_PROJECT_SAVEAS=3
-  CONST MENU_PROJECT_GENCODE=5
-  CONST MENU_PROJECT_SHOWLIBS=7
-  CONST MENU_PROJECT_ABOUT=9
-  CONST MENU_PROJECT_QUIT=11
+  CONST MENU_PROJECT_REOPEN=4
+  CONST MENU_PROJECT_GENCODE=6
+  CONST MENU_PROJECT_SHOWLIBS=8
+  CONST MENU_PROJECT_ABOUT=10
+  CONST MENU_PROJECT_QUIT=12
 
   CONST MENU_EDIT_ADD_GADGET=0
   CONST MENU_EDIT_ADD_IMAGE=1
@@ -109,8 +111,10 @@ OPT OSVERSION=37,LARGE
   CONST MENU_EDIT_MOVEBOTTOM=3
   CONST MENU_EDIT_MOVELPREV=4
   CONST MENU_EDIT_MOVELNEXT=5
+  CONST MENU_EDIT_MOVEINTOLAYOUT_HORIZ=6
+  CONST MENU_EDIT_MOVEINTOLAYOUT_VERT=7
 
-  CONST FILE_FORMAT_VER=1
+  CONST FILE_FORMAT_VER=2
 
   OBJECT systemOptions
     savePath[256]:ARRAY OF CHAR
@@ -145,7 +149,7 @@ OPT OSVERSION=37,LARGE
   
   DEF startupfilename[256]:STRING
   DEF iconFileName[256]:STRING
-  
+
   DEF tabsbase=0
   DEF gradientsliderbase=0
   DEF progressbase=0
@@ -158,6 +162,7 @@ OPT OSVERSION=37,LARGE
   DEF errorState=0
   DEF codeOptions: codeOptions
   DEF systemOptions: systemOptions
+  DEF recentFiles:PTR TO stringlist
 
 PROC openClasses()
   IF (requesterbase:=OpenLibrary('requester.class',0))=NIL THEN Throw("LIB","reqr")
@@ -259,18 +264,17 @@ ENDPROC
 PROC makeComponentList(comp:PTR TO reactionObject,generation,list, selcomp, newnode:PTR TO LONG)
   DEF comp2:PTR TO reactionObject
   DEF count,n,i
-  DEF compStr[30]:STRING
   DEF idStr[10]:STRING
   DEF typeStr[15]:STRING
  
-  IF StrLen(comp.name)=0
-    StringF(compStr,'\s',comp.getTypeName())
-  ELSE
-    StringF(compStr,'\s - \s',comp.getTypeName(),comp.name)
-  ENDIF
   StringF(idStr,'\d',comp.id)
-  StringF(typeStr,'\s',comp.getTypeName())
-  IF (n:=AllocListBrowserNodeA(3, [LBNA_FLAGS, IF (comp.parent=0) OR (comp.allowChildren()) THEN LBFLG_HASCHILDREN OR LBFLG_SHOWCHILDREN ELSE 0,LBNA_USERDATA, comp, LBNA_GENERATION, generation, LBNA_COLUMN,0, LBNCA_COPYTEXT, TRUE, LBNCA_TEXT, compStr, LBNA_COLUMN,1, LBNCA_COPYTEXT, TRUE, LBNCA_TEXT, typeStr,LBNA_COLUMN,2, LBNCA_COPYTEXT, TRUE, LBNCA_TEXT, idStr,TAG_END])) THEN AddTail(list, n) ELSE Raise("MEM")
+  StrCopy(typeStr,comp.getTypeName())
+  IF (n:=AllocListBrowserNodeA(3,
+    [LBNA_FLAGS, IF (comp.parent=0) OR (comp.allowChildren()) THEN LBFLG_HASCHILDREN OR LBFLG_SHOWCHILDREN ELSE 0,
+     LBNA_USERDATA, comp, LBNA_GENERATION, generation,
+     LBNA_COLUMN,0, LBNCA_COPYTEXT, TRUE, LBNCA_TEXT, IF StrLen(comp.ident) THEN comp.ident ELSE typeStr,
+     LBNA_COLUMN,1, LBNCA_COPYTEXT, TRUE, LBNCA_TEXT, typeStr,
+     LBNA_COLUMN,2, LBNCA_COPYTEXT, TRUE, LBNCA_TEXT, idStr,TAG_END])) THEN AddTail(list, n) ELSE Raise("MEM")
   comp.node:=n
   
   IF comp=selcomp THEN newnode[]:=n
@@ -337,6 +341,8 @@ PROC makeList(selcomp=0)
           IF (n:=AllocListBrowserNodeA(3, [LBNA_FLAGS, LBFLG_HASCHILDREN OR LBFLG_SHOWCHILDREN, LBNA_USERDATA, 0, LBNA_GENERATION, 1, LBNA_COLUMN,0, LBNCA_COPYTEXT, TRUE, LBNCA_TEXT, 'Application Begin', LBNA_COLUMN,1, LBNCA_COPYTEXT, TRUE, LBNCA_TEXT, 'System',LBNA_COLUMN,2, LBNCA_COPYTEXT, TRUE, LBNCA_TEXT, 'N/A',TAG_END])) THEN AddTail(list, n) ELSE Raise("MEM")
         CASE ROOT_REXX_ITEM
           IF (n:=AllocListBrowserNodeA(3, [LBNA_FLAGS, LBFLG_HASCHILDREN OR LBFLG_SHOWCHILDREN, LBNA_USERDATA, 0, LBNA_GENERATION, 2, LBNA_COLUMN,0, LBNCA_COPYTEXT, TRUE, LBNCA_TEXT, 'Rexx', LBNA_COLUMN,1, LBNCA_COPYTEXT, TRUE, LBNCA_TEXT, 'System',LBNA_COLUMN,2, LBNCA_COPYTEXT, TRUE, LBNCA_TEXT, 'N/A',TAG_END])) THEN AddTail(list, n) ELSE Raise("MEM")
+        CASE ROOT_REQUESTER_ITEM
+          IF (n:=AllocListBrowserNodeA(3, [LBNA_FLAGS, LBFLG_HASCHILDREN OR LBFLG_SHOWCHILDREN, LBNA_USERDATA, 0, LBNA_GENERATION, 2, LBNA_COLUMN,0, LBNCA_COPYTEXT, TRUE, LBNCA_TEXT, 'Requesters', LBNA_COLUMN,1, LBNCA_COPYTEXT, TRUE, LBNCA_TEXT, 'System',LBNA_COLUMN,2, LBNCA_COPYTEXT, TRUE, LBNCA_TEXT, 'N/A',TAG_END])) THEN AddTail(list, n) ELSE Raise("MEM")
         CASE ROOT_SCREEN_ITEM
           IF (n:=AllocListBrowserNodeA(3, [LBNA_FLAGS, LBFLG_HASCHILDREN OR LBFLG_SHOWCHILDREN, LBNA_USERDATA, 0, LBNA_GENERATION, 2, LBNA_COLUMN,0, LBNCA_COPYTEXT, TRUE, LBNCA_TEXT, 'Screen', LBNA_COLUMN,1, LBNCA_COPYTEXT, TRUE, LBNCA_TEXT, 'System',LBNA_COLUMN,2, LBNCA_COPYTEXT, TRUE, LBNCA_TEXT, 'N/A',TAG_END])) THEN AddTail(list, n) ELSE Raise("MEM")
         CASE ROOT_WINDOW_ITEM
@@ -345,9 +351,7 @@ PROC makeList(selcomp=0)
           IF (n:=AllocListBrowserNodeA(3, [LBNA_FLAGS, LBFLG_HASCHILDREN OR LBFLG_SHOWCHILDREN, LBNA_USERDATA, 0, LBNA_GENERATION, 4, LBNA_COLUMN,0, LBNCA_COPYTEXT, TRUE, LBNCA_TEXT, 'Menu', LBNA_COLUMN,1, LBNCA_COPYTEXT, TRUE, LBNCA_TEXT, 'System',LBNA_COLUMN,2, LBNCA_COPYTEXT, TRUE, LBNCA_TEXT, 'N/A',TAG_END])) THEN AddTail(list, n) ELSE Raise("MEM")
       ENDSELECT
     ELSE
-      IF i=ROOT_REXX_ITEM
-        depth:=2
-      ELSEIF i=ROOT_SCREEN_ITEM
+      IF i==[ROOT_REXX_ITEM,ROOT_REQUESTER_ITEM, ROOT_SCREEN_ITEM]
         depth:=2
       ELSE
         SELECT Mod(i-ROOT_WINDOW_ITEM,3)
@@ -404,7 +408,7 @@ PROC updateSel(node)
   DEF dis,idx
   DEF check,i,j
   DEF dismoveup,dismovedown,disdel
-  DEF disprevgroup,disnextgroup
+  DEF disprevgroup,disnextgroup,dismoveinto
   DEF menuItem
   DEF type
   DEF allowchildren=FALSE
@@ -436,10 +440,12 @@ PROC updateSel(node)
         dismoveup:=idx=0
         dismovedown:=idx=(((objectList.count()-ROOT_WINDOW_ITEM)/3)-1)
         disdel:=(objectList.count()=(ROOT_WINDOW_ITEM+3))
+        dismoveinto:=TRUE
       ELSE
         dismoveup:=TRUE
         dismovedown:=TRUE
         disdel:=TRUE
+        dismoveinto:=TRUE
       ENDIF
       disprevgroup:=TRUE
       disnextgroup:=TRUE
@@ -447,6 +453,7 @@ PROC updateSel(node)
       dismoveup:=comp.getChildIndex()=0
       dismovedown:=comp.getChildIndex()=(comp.parent.children.count()-1)
       disdel:=(comp.parent=0)
+      dismoveinto:=FALSE
       IF comp.parent.parent=0
         disprevgroup:=TRUE
         disnextgroup:=TRUE
@@ -475,6 +482,8 @@ PROC updateSel(node)
     menuDisable(win,MENU_EDIT,MENU_EDIT_MOVE,MENU_EDIT_MOVEBOTTOM,dismovedown)
     menuDisable(win,MENU_EDIT,MENU_EDIT_MOVE,MENU_EDIT_MOVELPREV,disprevgroup)
     menuDisable(win,MENU_EDIT,MENU_EDIT_MOVE,MENU_EDIT_MOVELNEXT,disnextgroup)
+    menuDisable(win,MENU_EDIT,MENU_EDIT_MOVE,MENU_EDIT_MOVEINTOLAYOUT_VERT,dismoveinto)
+    menuDisable(win,MENU_EDIT,MENU_EDIT_MOVE,MENU_EDIT_MOVEINTOLAYOUT_HORIZ,dismoveinto)
     
     dis:=(comp.parent=0) AND (allowchildren=FALSE) AND (comp.type<>TYPE_SCREEN) AND (comp.type<>TYPE_WINDOW)
     SetGadgetAttrsA(gMain_Gadgets[GAD_ADD],win,0,[GA_DISABLED,dis,TAG_END])
@@ -502,8 +511,9 @@ PROC updateSel(node)
     SetGadgetAttrsA(gMain_Gadgets[GAD_MOVEDOWN],win,0,[GA_DISABLED,dismovedown,TAG_END])
 
     IF bufferLayout
-      SetGadgetAttrsA(gMain_Gadgets[GAD_TEMP_COPYFROM],win,0,[GA_DISABLED,selectedBuffComp=0,TAG_END])
-      SetGadgetAttrsA(gMain_Gadgets[GAD_TEMP_MOVEFROM],win,0,[GA_DISABLED,selectedBuffComp=0,TAG_END])
+      dis:=(selectedBuffComp=0) OR (allowchildren=FALSE) OR (comp.type==[TYPE_SCREEN,TYPE_WINDOW,TYPE_MENU,TYPE_REXX])
+      SetGadgetAttrsA(gMain_Gadgets[GAD_TEMP_COPYFROM],win,0,[GA_DISABLED,dis,TAG_END])
+      SetGadgetAttrsA(gMain_Gadgets[GAD_TEMP_MOVEFROM],win,0,[GA_DISABLED,dis,TAG_END])
     ENDIF
   ELSE
     selectedComp:=0
@@ -524,6 +534,14 @@ PROC updateSel(node)
     menuDisable(win,MENU_EDIT,MENU_EDIT_MOVE,MENU_EDIT_MOVEDOWN,TRUE)
     menuDisable(win,MENU_EDIT,MENU_EDIT_ADD_VLAYOUT,0,TRUE)
     menuDisable(win,MENU_EDIT,MENU_EDIT_ADD_HLAYOUT,0,TRUE)
+    menuDisable(win,MENU_EDIT,MENU_EDIT_MOVE,MENU_EDIT_MOVETOP,TRUE)
+    menuDisable(win,MENU_EDIT,MENU_EDIT_MOVE,MENU_EDIT_MOVEBOTTOM,TRUE)
+    menuDisable(win,MENU_EDIT,MENU_EDIT_MOVE,MENU_EDIT_MOVELPREV,TRUE)
+    menuDisable(win,MENU_EDIT,MENU_EDIT_MOVE,MENU_EDIT_MOVELNEXT,TRUE)
+    menuDisable(win,MENU_EDIT,MENU_EDIT_MOVE,MENU_EDIT_MOVEINTOLAYOUT_VERT,TRUE)
+    menuDisable(win,MENU_EDIT,MENU_EDIT_MOVE,MENU_EDIT_MOVEINTOLAYOUT_HORIZ,TRUE)
+
+    menuDisable(win,MENU_PROJECT,MENU_PROJECT_REOPEN,0,recentFiles.count()=0)
 
     SetGadgetAttrsA(gMain_Gadgets[GAD_ADD],win,0,[GA_DISABLED,TRUE,TAG_END])
     SetGadgetAttrsA(gMain_Gadgets[GAD_GENMINUS],win,0,[GA_DISABLED,TRUE,TAG_END])
@@ -869,7 +887,7 @@ PROC createForm()
   
 ENDPROC
 
-PROC addObject(parent:PTR TO reactionObject,newobj:PTR TO reactionObject)
+PROC addObject(parent:PTR TO reactionObject,newobj:PTR TO reactionObject, index=-1)
   DEF idx, mainRootLayout
   DEF window
   
@@ -878,7 +896,11 @@ PROC addObject(parent:PTR TO reactionObject,newobj:PTR TO reactionObject)
     mainRootLayout:=objectList.item(ROOT_LAYOUT_ITEM+(idx*3))
     window:=objectList.item(ROOT_WINDOW_ITEM+(idx*3))
     removeMembers(mainRootLayout,window)
-    parent.addChild(newobj)
+    IF index<>-1
+      parent.addChildAt(newobj,index)
+    ELSE
+      parent.addChild(newobj)
+    ENDIF
     makeList(newobj)
     addMembers(mainRootLayout,window)
     rethinkPreviews()
@@ -1101,6 +1123,32 @@ PROC moveNextLayout(comp:PTR TO reactionObject)
   rethinkPreviews()
 ENDPROC
 
+PROC moveIntoLayout(comp:PTR TO reactionObject,horiz)
+  DEF newComp:PTR TO reactionObject
+
+  DEF idx, mainRootLayout, window
+  DEF parent:PTR TO reactionObject
+  
+  parent:=comp.parent
+  IF parent.allowChildren()
+    newComp:=doAddLayoutQuick(parent,horiz)
+
+    changes:=TRUE
+    idx:=findWindowIndex(comp)
+    mainRootLayout:=objectList.item(ROOT_LAYOUT_ITEM+(idx*3))
+    window:=objectList.item(ROOT_WINDOW_ITEM+(idx*3))
+    removeMembers(mainRootLayout,window)
+
+    parent.swapChildren(comp.getChildIndex(),newComp.getChildIndex())
+    parent.removeChild(comp)
+    newComp.addChild(comp)
+
+    makeList(comp)
+    addMembers(mainRootLayout,window)
+    rethinkPreviews()  
+  ENDIF
+ENDPROC
+
 PROC findWindowIndex(comp:PTR TO reactionObject)
   DEF res,i
   IF comp.type=TYPE_WINDOW
@@ -1229,6 +1277,7 @@ PROC genCode()
   DEF menuComp:PTR TO reactionObject
   DEF windowComp:PTR TO reactionObject
   DEF layoutComp:PTR TO reactionObject
+  DEF requesterComp:PTR TO reactionObject
   DEF screenComp:PTR TO screenObject
   DEF rexxComp:PTR TO rexxObject
   DEF libsused[TYPE_MAX]:ARRAY OF CHAR
@@ -1325,7 +1374,8 @@ PROC genCode()
   windowComp:=objectList.item(ROOT_WINDOW_ITEM)
   screenComp:=objectList.item(ROOT_SCREEN_ITEM)
   rexxComp:=objectList.item(ROOT_REXX_ITEM)
-  srcGen.genHeader(screenComp,rexxComp, windowItems,windowLayouts, sharedport)
+  requesterComp:=objectList.item(ROOT_REQUESTER_ITEM)
+  srcGen.genHeader(screenComp,rexxComp,requesterComp,windowItems,windowLayouts, sharedport)
   END windowItems
   END windowLayouts
   WHILE (i+ROOT_WINDOW_ITEM)<objectList.count()
@@ -1388,6 +1438,38 @@ PROC processObjects(obj:PTR TO reactionObject,list:PTR TO stdlist)
        processObjects(tmpObj,list)
     ENDIF
   ENDFOR
+ENDPROC
+
+PROC loadRecent()
+  DEF fs:PTR TO fileStreamer
+  DEF tempStr[255]:STRING
+  NEW fs.create('ENVARC:Rebuild/recent',MODE_OLDFILE)
+  IF fs.isOpen()
+    WHILE fs.readLine(tempStr)
+      recentFiles.add(tempStr)
+    ENDWHILE
+  ENDIF
+  END fs
+ENDPROC
+
+PROC saveRecent()
+  DEF fs:PTR TO fileStreamer,fl,i
+  fl:=CreateDir('ENVARC:Rebuild')
+  IF fl THEN UnLock(fl)
+  NEW fs.create('ENVARC:Rebuild/recent',MODE_NEWFILE)
+  IF fs.isOpen()
+    FOR i:=0 TO recentFiles.count()-1 DO fs.writeLine(recentFiles.item(i))
+  ENDIF
+  END fs
+ENDPROC
+
+PROC addRecent(filename:PTR TO CHAR)
+  DEF i
+  FOR i:=recentFiles.count()-1 TO 0 STEP -1
+    IF StriCmp(recentFiles.item(i),filename) THEN recentFiles.remove(i)
+  ENDFOR
+  IF recentFiles.count()>4 THEN recentFiles.remove(4)
+  recentFiles.insert(0,filename)
 ENDPROC
 
 PROC loadFile(loadfilename:PTR TO CHAR) HANDLE
@@ -1520,6 +1602,7 @@ PROC loadFile(loadfilename:PTR TO CHAR) HANDLE
 
   objectList.add(0)  ->Application begin
   objectList.add(0)  ->Rexx
+  objectList.add(0)  ->Requester
   objectList.add(0)  ->Screen
   objectList.add(0)  ->Window
   objectList.add(0)  ->Menu
@@ -1536,6 +1619,7 @@ PROC loadFile(loadfilename:PTR TO CHAR) HANDLE
       IF type=TYPE_REACTIONLIST THEN reactionLists.add(newObj)
       IF type=TYPE_SCREEN THEN objectList.setItem(ROOT_SCREEN_ITEM,newObj)
       IF type=TYPE_REXX THEN objectList.setItem(ROOT_REXX_ITEM,newObj)
+      IF type=TYPE_REQUESTER THEN objectList.setItem(ROOT_REQUESTER_ITEM,newObj)
       IF type=TYPE_WINDOW
         IF objectList.item(ROOT_WINDOW_ITEM)=0
           objectList.setItem(ROOT_WINDOW_ITEM,newObj)
@@ -1552,6 +1636,13 @@ PROC loadFile(loadfilename:PTR TO CHAR) HANDLE
       loadObjectList.add(newObj)
     ENDIF
   ENDWHILE
+
+  //original v1 files did not include requester
+  IF objectList.item(ROOT_REQUESTER_ITEM)=0
+    newObj:=createRequesterObject(0)
+    newObj.id:=newid++
+    objectList.setItem(ROOT_REQUESTER_ITEM,newObj)
+  ENDIF
 
   FOR i:=0 TO loadObjectList.count()-1
     newObj:=loadObjectList.item(i)
@@ -1576,6 +1667,7 @@ PROC loadFile(loadfilename:PTR TO CHAR) HANDLE
     addMembers(objectList.item(i+ROOT_LAYOUT_ITEM-ROOT_WINDOW_ITEM),objectList.item(i))
     i+=3
   ENDWHILE
+  addRecent(filename)
   remakePreviewMenus()
  
   changes:=FALSE
@@ -1704,6 +1796,7 @@ PROC saveFileAs()
   IF FileLength(filename)>=0
     IF warnRequest(mainWindow,'Warning','This file already exists,\ndo you want to overwrite?',TRUE)=0 THEN RETURN FALSE
   ENDIF
+  addRecent(filename)
 ENDPROC saveFile()
 
 PROC unsavedChangesWarning()
@@ -1802,6 +1895,7 @@ PROC doAddWindow()
       makeList()
       SetGadgetAttrsA(gMain_Gadgets[GAD_COMPONENTLIST],win,0,[LISTBROWSER_SELECTEDNODE, newwin.node, TAG_END])
       updateSel(newwin.node)
+      makePreviewHints(newwin)
       RA_OpenWindow(newwin.previewObject)
       remakePreviewMenus()
       changes:=TRUE
@@ -1828,14 +1922,16 @@ PROC doAddLayoutQuick(comp:PTR TO reactionObject, horiz)
     IF newObj 
       IF horiz
         newObj.orientation:=0
-        StringF(tempStr,'Horiz\d',newObj.id)
+        StringF(tempStr,'Horiz_\d',newObj.id)
         AstrCopy(newObj.name,tempStr,80)
+        AstrCopy(newObj.ident,tempStr,80)
       ENDIF
       changes:=TRUE
-      addObject(comp,newObj)
+      
+      addObject(comp,newObj,IF comp=selectedComp THEN -1 ELSE selectedComp.getChildIndex()+1)
     ENDIF
   ENDIF
-ENDPROC
+ENDPROC newObj
 
 PROC countObjectsOfType(objType,comp:PTR TO reactionObject)
   DEF count=0,i
@@ -1901,7 +1997,8 @@ PROC doAddComp(comp:PTR TO reactionObject, objType)
           comp:=layoutObj
         ENDIF
         changes:=TRUE
-        addObject(comp,newObj)
+        
+        addObject(comp,newObj,IF comp=selectedComp THEN -1 ELSE selectedComp.getChildIndex()+1)
       ENDIF
       clearBusy()
     ENDIF
@@ -2054,7 +2151,7 @@ PROC copyFromBuffer(bufferComp:PTR TO reactionObject)
   DEF comp:PTR TO reactionObject
   DEF fs:PTR TO fileStreamer
   DEF oldid,defname
-  DEF name[100]:STRING
+  DEF ident[100]:STRING
 
   NEW fs.create('t:tempcomp',MODE_NEWFILE)
   IF fs.isOpen()=FALSE
@@ -2076,14 +2173,14 @@ PROC copyFromBuffer(bufferComp:PTR TO reactionObject)
   ENDIF
 
   newObj.deserialise(fs)
-  StringF(name,'\s_\d',newObj.getTypeName(),newObj.id)
-  defname:=StrCmp(newObj.name,name)
+  StringF(ident,'\s_\d',newObj.getTypeName(),newObj.id)
+  defname:=StrCmp(newObj.ident,ident)
  
   newObj.id:=oldid
 
   IF defname
-    StringF(name,'\s_\d',newObj.getTypeName(),oldid)
-    AstrCopy(newObj.name,name)
+    StringF(ident,'\s_\d',newObj.getTypeName(),oldid)
+    AstrCopy(newObj.ident,ident)
   ENDIF
   
   END fs
@@ -2143,10 +2240,10 @@ PROC makeBufferList()
 
     FOR i:=0 TO bufferList.count()-1
       comp:=bufferList.item(i)
-      IF StrLen(comp.name)=0
+      IF StrLen(comp.ident)=0
         StringF(compStr,'\s',comp.getTypeName())
       ELSE
-        StringF(compStr,'\s - \s',comp.getTypeName(),comp.name)
+        StringF(compStr,'\s - \s',comp.getTypeName(),comp.ident)
       ENDIF
       IF (n:=AllocListBrowserNodeA(1, [LBNA_USERDATA, comp, LBNA_COLUMN,0, LBNCA_COPYTEXT, TRUE, LBNCA_TEXT, compStr,TAG_END])) THEN AddTail(list2, n) ELSE Raise("MEM")
     ENDFOR
@@ -2206,6 +2303,7 @@ PROC newProject()
   
   objectList.add(0)  ->Application begin
   objectList.add(createRexxObject(0))  ->Rexx
+  objectList.add(createRequesterObject(0))  ->Requester
   objectList.add(createScreenObject(0))  ->Screen
   objectList.add(createWindowObject(0))  ->Window
   objectList.add(createMenuObject(0))  ->Menu
@@ -2340,93 +2438,107 @@ PROC remakePreviewMenus()
   IF menus THEN FreeMenus(menus)
   
   menuSetup:=[
-  NM_TITLE,'Project',0,0,
-  NM_ITEM,'New',0,0,
-  NM_ITEM,'Open',0,0,
-  NM_ITEM,'Save',0,0,
-  NM_ITEM,'Save As',0,0,
-  NM_ITEM,NM_BARLABEL,0,0,
-  NM_ITEM,'Generate Code',0,0,
-  NM_ITEM,NM_BARLABEL,0,0,
-  NM_ITEM,'Show Libraries',0,0,
-  NM_ITEM,NM_BARLABEL,0,0,
-  NM_ITEM,'About',0,0,
-  NM_ITEM,NM_BARLABEL,0,0,
-  NM_ITEM,'Quit',0,0,
-  NM_TITLE,'Edit',0,0,
-  NM_ITEM,'Add Gadget',-1,0,
-  NM_SUB,'Button',TYPE_BUTTON,0,
-  NM_SUB,'CheckBox',TYPE_CHECKBOX,0,
-  NM_SUB,'Chooser',TYPE_CHOOSER,0,
-  NM_SUB,'ClickTab',TYPE_CLICKTAB,0,
-  NM_SUB,'ColorWheel',TYPE_COLORWHEEL,0,
-  NM_SUB,'DateBrowser',TYPE_DATEBROWSER,0,
-  NM_SUB,'FuelGauge',TYPE_FUELGAUGE,0,
-  NM_SUB,'GetColor',TYPE_GETCOLOR,0,
-  NM_SUB,'GetFile',TYPE_GETFILE,0,
-  NM_SUB,'GetFont',TYPE_GETFONT,0,
-  NM_SUB,'GetScreenMode',TYPE_GETSCREENMODE,0,
-  NM_SUB,'GradientSlider',TYPE_GRADSLIDER,0,
-  NM_SUB,'Integer',TYPE_INTEGER,0,
-  NM_SUB,'Layout',TYPE_LAYOUT,0,
-  NM_SUB,'ListBrowser',TYPE_LISTBROWSER,0,
-  NM_SUB,'ListView',TYPE_LISTVIEW,0,
-  NM_SUB,'Palette',TYPE_PALETTE,0,
-  NM_SUB,'RadioButton',TYPE_RADIO,0,
-  NM_SUB,'Scroller',TYPE_SCROLLER,0,
-  NM_SUB,'SketchBoard',TYPE_SKETCH,0,
-  NM_SUB,'Slider',TYPE_SLIDER,0,
-  NM_SUB,'Space',TYPE_SPACE,0,
-  NM_SUB,'SpeedBar',TYPE_SPEEDBAR,0,
-  NM_SUB,'String',TYPE_STRING,0,
-  NM_SUB,'Tabs',TYPE_TABS,0,
-  NM_SUB,'TapeDeck',TYPE_TAPEDECK,0,
-  NM_SUB,'TextEditor',TYPE_TEXTEDITOR,0,
-  NM_SUB,'TextField',TYPE_TEXTFIELD,0,
-  NM_SUB,'Virtual',TYPE_VIRTUAL,0,
-  NM_ITEM,'Add Image',-1,0,
-  NM_SUB,'Bevel',TYPE_BEVEL,0,
-  NM_SUB,'BitMap',TYPE_BITMAP,0,
-  NM_SUB,'BoingBall',TYPE_BOINGBALL,0,
-  NM_SUB,'DrawList',TYPE_DRAWLIST,0,
-  NM_SUB,'Glyph',TYPE_GLYPH,0,
-  NM_SUB,'Label',TYPE_LABEL,0,
-  NM_SUB,'LED',TYPE_LED,0,
-  NM_SUB,'PenMap',TYPE_PENMAP,0,
-  NM_ITEM,'Add Window',-1,0,
-  NM_ITEM,'Add HLayout (quick)',-1,0,
-  NM_ITEM,'Add VLayout (quick)',-1,0,
-  NM_ITEM,NM_BARLABEL,0,0,
-  NM_ITEM,'Edit',0,0,
-  NM_ITEM,'Delete',0,0,
-  NM_ITEM,NM_BARLABEL,0,0,
-  NM_ITEM,'Move',0,0,
-  NM_SUB,'Up',0,0,
-  NM_SUB,'Down',0,0,
-  NM_SUB,'Layout Top',0,0,
-  NM_SUB,'Layout Bottom',0,0,
-  NM_SUB,'Prev Layout',0,0,
-  NM_SUB,'Next Layout',0,0,
-  NM_ITEM,NM_BARLABEL,0,0,
-  NM_ITEM,'Edit Lists',0,0,
-  NM_ITEM,NM_BARLABEL,0,0,
-  NM_ITEM,'Show Buffer',0,(CHECKIT OR (IF bufferLayout THEN CHECKED ELSE 0 ) OR MENUTOGGLE),
-  NM_ITEM,'Show Settings On Add',0,(CHECKIT OR (IF systemOptions.showSettingsOnAdd THEN CHECKED ELSE 0 ) OR MENUTOGGLE),
-  NM_ITEM,'Warn On Delete',0,(CHECKIT OR (IF systemOptions.warnOnDelete THEN CHECKED ELSE 0 ) OR MENUTOGGLE),
-  NM_ITEM,'Save Project Icons',0,(CHECKIT OR (IF systemOptions.saveProjectIcons THEN CHECKED ELSE 0 ) OR MENUTOGGLE),
-  NM_ITEM,NM_BARLABEL,0,0,
-  NM_ITEM,'Preview Windows',0,0
+  NM_TITLE,'Project',0,0,0,
+  NM_ITEM,'New',0,0,'N',
+  NM_ITEM,'Open',0,0,'O',
+  NM_ITEM,'Save',0,0,'S',
+  NM_ITEM,'Save As',0,MIF_SHIFTCOMMSEQ,'S',
+  NM_ITEM,'Reopen',0,0,0,
+  NM_SUB,IF recentFiles.count()>0 THEN recentFiles.item(0) ELSE 0,0,0,0,
+  NM_SUB,IF recentFiles.count()>1 THEN recentFiles.item(1) ELSE 0,0,0,0,
+  NM_SUB,IF recentFiles.count()>2 THEN recentFiles.item(2) ELSE 0,0,0,0,
+  NM_SUB,IF recentFiles.count()>3 THEN recentFiles.item(3) ELSE 0,0,0,0,
+  NM_SUB,IF recentFiles.count()>4 THEN recentFiles.item(4) ELSE 0,0,0,0,
+  NM_ITEM,NM_BARLABEL,0,0,0,
+  NM_ITEM,'Generate Code',0,0,'C',
+  NM_ITEM,NM_BARLABEL,0,0,0,
+  NM_ITEM,'Show Libraries',0,0,0,
+  NM_ITEM,NM_BARLABEL,0,0,0,
+  NM_ITEM,'About',0,0,0,
+  NM_ITEM,NM_BARLABEL,0,0,0,
+  NM_ITEM,'Quit',0,0,'Q',
+  NM_TITLE,'Edit',0,0,0,
+  NM_ITEM,'Add Gadget',-1,0,0,
+  NM_SUB,'Button',TYPE_BUTTON,0,0,
+  NM_SUB,'CheckBox',TYPE_CHECKBOX,0,0,
+  NM_SUB,'Chooser',TYPE_CHOOSER,0,0,
+  NM_SUB,'ClickTab',TYPE_CLICKTAB,0,0,
+  NM_SUB,'ColorWheel',TYPE_COLORWHEEL,0,0,
+  NM_SUB,'DateBrowser',TYPE_DATEBROWSER,0,0,
+  NM_SUB,'FuelGauge',TYPE_FUELGAUGE,0,0,
+  NM_SUB,'GetColor',TYPE_GETCOLOR,0,0,
+  NM_SUB,'GetFile',TYPE_GETFILE,0,0,
+  NM_SUB,'GetFont',TYPE_GETFONT,0,0,
+  NM_SUB,'GetScreenMode',TYPE_GETSCREENMODE,0,0,
+  NM_SUB,'GradientSlider',TYPE_GRADSLIDER,0,0,
+  NM_SUB,'Integer',TYPE_INTEGER,0,0,
+  NM_SUB,'Layout',TYPE_LAYOUT,0,0,
+  NM_SUB,'ListBrowser',TYPE_LISTBROWSER,0,0,
+  NM_SUB,'ListView',TYPE_LISTVIEW,0,0,
+  NM_SUB,'Palette',TYPE_PALETTE,0,0,
+  NM_SUB,'RadioButton',TYPE_RADIO,0,0,
+  NM_SUB,'Scroller',TYPE_SCROLLER,0,0,
+  NM_SUB,'SketchBoard',TYPE_SKETCH,0,0,
+  NM_SUB,'Slider',TYPE_SLIDER,0,0,
+  NM_SUB,'Space',TYPE_SPACE,0,0,
+  NM_SUB,'SpeedBar',TYPE_SPEEDBAR,0,0,
+  NM_SUB,'String',TYPE_STRING,0,0,
+  NM_SUB,'Tabs',TYPE_TABS,0,0,
+  NM_SUB,'TapeDeck',TYPE_TAPEDECK,0,0,
+  NM_SUB,'TextEditor',TYPE_TEXTEDITOR,0,0,
+  NM_SUB,'TextField',TYPE_TEXTFIELD,0,0,
+  NM_SUB,'Virtual',TYPE_VIRTUAL,0,0,
+  NM_ITEM,'Add Image',-1,0,0,
+  NM_SUB,'Bevel',TYPE_BEVEL,0,0,
+  NM_SUB,'BitMap',TYPE_BITMAP,0,0,
+  NM_SUB,'BoingBall',TYPE_BOINGBALL,0,0,
+  NM_SUB,'DrawList',TYPE_DRAWLIST,0,0,
+  NM_SUB,'Glyph',TYPE_GLYPH,0,0,
+  NM_SUB,'Label',TYPE_LABEL,0,0,
+  NM_SUB,'LED',TYPE_LED,0,0,
+  NM_SUB,'PenMap',TYPE_PENMAP,0,0,
+  NM_ITEM,'Add Window',-1,0,'W',
+  NM_ITEM,'Add HLayout (quick)',-1,0,'H',
+  NM_ITEM,'Add VLayout (quick)',-1,0,'V',
+  NM_ITEM,NM_BARLABEL,0,0,0,
+  NM_ITEM,'Edit',0,0,'E',
+  NM_ITEM,'Delete',0,0,'D',
+  NM_ITEM,NM_BARLABEL,0,0,0,
+  NM_ITEM,'Move',0,0,0,
+  NM_SUB,'Up',0,0,'U',
+  NM_SUB,'Down',0,0,'D',
+  NM_SUB,'Layout Top',0,0,'T',
+  NM_SUB,'Layout Bottom',0,0,'B',
+  NM_SUB,'Prev Layout',0,MIF_SHIFTCOMMSEQ,'U',
+  NM_SUB,'Next Layout',0,MIF_SHIFTCOMMSEQ,'D',
+  NM_SUB,'Into HLayout',0,MIF_SHIFTCOMMSEQ,'H',
+  NM_SUB,'Into VLayout',0,MIF_SHIFTCOMMSEQ,'V',
+  NM_ITEM,NM_BARLABEL,0,0,0,
+  NM_ITEM,'Edit Lists',0,0,'L',
+  NM_ITEM,NM_BARLABEL,0,0,0,
+  NM_ITEM,'Show Buffer',0,(CHECKIT OR (IF bufferLayout THEN CHECKED ELSE 0 ) OR MENUTOGGLE),0,
+  NM_ITEM,'Show Settings On Add',0,(CHECKIT OR (IF systemOptions.showSettingsOnAdd THEN CHECKED ELSE 0 ) OR MENUTOGGLE),0,
+  NM_ITEM,'Warn On Delete',0,(CHECKIT OR (IF systemOptions.warnOnDelete THEN CHECKED ELSE 0 ) OR MENUTOGGLE),0,
+  NM_ITEM,'Save Project Icons',0,(CHECKIT OR (IF systemOptions.saveProjectIcons THEN CHECKED ELSE 0 ) OR MENUTOGGLE),0,
+  NM_ITEM,NM_BARLABEL,0,0,0,
+  NM_ITEM,'Preview Windows',0,0,0
   ]
-  count:=count+Shr(ListLen(menuSetup),2)
+  count:=count+Div(ListLen(menuSetup),5)
   NEW menuData[count]
   
   n:=0
   i:=0
   WHILE i<ListLen(menuSetup)
-    menuData[n].type:=menuSetup[i++]
-    menuData[n].label:=menuSetup[i++]
-    menuData[n].userdata:=menuSetup[i++]
-    menuData[n++].flags:=menuSetup[i++]
+    IF (menuSetup[i+1])
+      menuData[n].type:=menuSetup[i++]
+      menuData[n].label:=menuSetup[i++]
+      menuData[n].userdata:=menuSetup[i++]
+      menuData[n].flags:=menuSetup[i++]
+      menuData[n].commkey:=menuSetup[i++]
+      n++
+    ELSE
+      i+=5
+    ENDIF
   ENDWHILE
 
   i:=ROOT_WINDOW_ITEM
@@ -2455,19 +2567,66 @@ PROC remakePreviewMenus()
   ENDIF
 ENDPROC
 
+PROC makeHintList(comp:PTR TO reactionObject, hintGadIds:PTR TO stdlist, hintTexts:PTR TO stdlist)
+  DEF i,tempText
+
+  IF comp.hintText.count()
+    tempText:=comp.hintText.makeTextString()
+    hintTexts.add(tempText)
+    Dispose(tempText)
+    hintGadIds.add(comp.id)
+  ENDIF
+  
+  IF comp.allowChildren()
+    FOR i:=0 TO comp.children.count()-1
+      makeHintList(comp.children.item(i),hintGadIds, hintTexts)
+    ENDFOR
+  ENDIF
+ENDPROC
+
+PROC makePreviewHints(window:PTR TO windowObject)
+  DEF previewHintInfo:PTR TO hintinfo
+  DEF hintTexts:PTR TO stdlist
+  DEF hintGadIds:PTR TO stdlist
+  DEF i,count
+
+  NEW hintTexts.stdlist(10) 
+  NEW hintGadIds.stdlist(10) 
+  makeHintList(objectList.item(findWindowIndex(window)*3+ROOT_LAYOUT_ITEM),hintGadIds,hintTexts)
+  count:=hintTexts.count()
+  
+  previewHintInfo:=window.previewHintInfo
+  IF previewHintInfo THEN Dispose(previewHintInfo)
+  previewHintInfo:=New(SIZEOF hintinfo*(count+1))
+  window.previewHintInfo:=previewHintInfo
+  FOR i:=0 TO count-1
+    previewHintInfo[i].code:=-1
+    previewHintInfo[i].gadgetid:=hintGadIds.item(i)
+    previewHintInfo[i].text:=hintTexts.item(i)
+  ENDFOR
+  previewHintInfo[count].gadgetid:=-1
+  previewHintInfo[count].code:=-1
+  END hintTexts
+  END hintGadIds
+
+  Sets(window.previewObject,WINDOW_HINTINFO,previewHintInfo)
+  Sets(window.previewObject,WINDOW_GADGETHELP,TRUE)
+ENDPROC
 
 PROC rethinkPreviews()
   DEF pwin,previewWin,previewRootLayout,i
   DEF menu
   
   i:=ROOT_WINDOW_ITEM
-  WHILE (i<objectList.count())
+  WHILE (i<objectList.count())  
     previewWin:=objectList.item(i)::windowObject.previewObject
     menu:=objectList.item(i-ROOT_WINDOW_ITEM+ROOT_MENU_ITEM)::menuObject.previewObject
     previewRootLayout:=objectList.item(i)::windowObject.previewRootLayout
     IF previewWin
+      makePreviewHints(objectList.item(i))
+      
       pwin:=Gets(previewWin,WINDOW_WINDOW)
-      IF pwin
+      IF pwin     
         RethinkLayout(previewRootLayout, pwin, 0, TRUE )
         DoMethod(previewWin, WM_RETHINK)
         IF menu THEN SetMenuStrip(pwin,menu) ELSE ClearMenuStrip(pwin)
@@ -2637,6 +2796,8 @@ PROC createObjectByType(objType,comp)
       newObj:=createSketchboardObject(comp)
     CASE TYPE_TABS
       newObj:=createTabsObject(comp)
+    CASE TYPE_REQUESTER
+      newObj:=createRequesterObject(comp)
     DEFAULT
       Raise("OBJ")
   ENDSELECT
@@ -2672,6 +2833,9 @@ PROC main() HANDLE
   NEW objectList.stdlist(20)
   NEW bufferList.stdlist(20)
   initReactionLists()
+
+  NEW recentFiles.stringlist(5)
+  loadRecent()
 
   hintInfo:=New(SIZEOF hintinfo*17)
   hintInfo[0].gadgetid:=GAD_ADD
@@ -2808,6 +2972,8 @@ PROC main() HANDLE
                       saveFile()
                     CASE MENU_PROJECT_SAVEAS ->Save As
                       saveFileAs()
+                    CASE MENU_PROJECT_REOPEN  ->Reopen file
+                      doLoad(recentFiles.item(subitem))
                     CASE MENU_PROJECT_GENCODE ->Generate Code
                       genCode()
                     CASE MENU_PROJECT_SHOWLIBS
@@ -2851,6 +3017,10 @@ PROC main() HANDLE
                           movePrevLayout(selectedComp)
                         CASE MENU_EDIT_MOVELNEXT
                           moveNextLayout(selectedComp)
+                        CASE MENU_EDIT_MOVEINTOLAYOUT_VERT
+                          moveIntoLayout(selectedComp,FALSE)
+                        CASE MENU_EDIT_MOVEINTOLAYOUT_HORIZ
+                          moveIntoLayout(selectedComp,TRUE)
                       ENDSELECT
                     CASE MENU_EDIT_LISTS
                       editLists()
@@ -3016,6 +3186,10 @@ EXCEPT DO
   ENDIF
   IF menus THEN FreeMenus(menus)
   disposeObjects()
+  IF recentFiles 
+    saveRecent()
+    END recentFiles
+  ENDIF
   IF objectList THEN END objectList
   IF bufferList 
     disposeBufferObjects()

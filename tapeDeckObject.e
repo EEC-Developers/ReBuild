@@ -19,9 +19,9 @@ OPT MODULE, OSVERSION=37
         'intuition/imageclass',
         'intuition/gadgetclass'
 
-  MODULE '*reactionObject','*reactionForm','*sourcegen'
+  MODULE '*reactionObject','*reactionForm','*sourcegen','*validator'
 
-EXPORT ENUM TAPEGAD_ANIM,TAPEGAD_MODE,TAPEGAD_FRAMES,TAPEGAD_CURRFRAME,
+EXPORT ENUM TAPEGAD_IDENT, TAPEGAD_HINT, TAPEGAD_ANIM,TAPEGAD_MODE,TAPEGAD_FRAMES,TAPEGAD_CURRFRAME,
       TAPEGAD_OK, TAPEGAD_CHILD, TAPEGAD_CANCEL
       
 EXPORT DEF tapedeckbase
@@ -76,6 +76,28 @@ PROC create() OF tapeDeckSettingsForm
     LAYOUT_SPACEOUTER, TRUE,
     LAYOUT_DEFERLAYOUT, TRUE,
 
+      LAYOUT_ADDCHILD, LayoutObject,
+        LAYOUT_ORIENTATION, LAYOUT_ORIENT_HORIZ,
+        LAYOUT_ADDCHILD, self.gadgetList[ TAPEGAD_IDENT ]:=StringObject,
+          GA_ID, TAPEGAD_IDENT,
+          GA_RELVERIFY, TRUE,
+          GA_TABCYCLE, TRUE,
+          STRINGA_MAXCHARS, 80,
+        StringEnd,
+
+        CHILD_LABEL, LabelObject,
+          LABEL_TEXT, 'Identifier',
+        LabelEnd,
+
+        LAYOUT_ADDCHILD,  self.gadgetList[ TAPEGAD_HINT ]:=ButtonObject,
+          GA_ID, TAPEGAD_HINT,
+          GA_TEXT, 'Hint',
+          GA_RELVERIFY, TRUE,
+          GA_TABCYCLE, TRUE,
+        ButtonEnd,           
+        CHILD_WEIGHTEDWIDTH,50,
+        
+      LayoutEnd,
 
       LAYOUT_ADDCHILD, LayoutObject,
         LAYOUT_ORIENTATION, LAYOUT_ORIENT_HORIZ,
@@ -165,6 +187,7 @@ PROC create() OF tapeDeckSettingsForm
   WindowEnd
 
   self.gadgetActions[TAPEGAD_CHILD]:={editChildSettings}
+  self.gadgetActions[TAPEGAD_HINT]:={editHint}  
   self.gadgetActions[TAPEGAD_CANCEL]:=MR_CANCEL
   self.gadgetActions[TAPEGAD_OK]:=MR_OK
 ENDPROC
@@ -182,11 +205,30 @@ PROC end() OF tapeDeckSettingsForm
   END self.gadgetActions[NUM_TAPE_GADS]
 ENDPROC
 
+EXPORT PROC canClose(modalRes) OF tapeDeckSettingsForm
+  DEF res
+  IF modalRes=MR_CANCEL THEN RETURN TRUE
+  
+  IF checkIdent(self,self.tapeDeckObject,TAPEGAD_IDENT)=FALSE
+    RETURN FALSE
+  ENDIF
+ENDPROC TRUE
+
+PROC editHint(nself,gadget,id,code) OF tapeDeckSettingsForm
+  self:=nself
+  self.setBusy()
+  self.tapeDeckObject.editHint()
+  self.clearBusy()
+  self.updateHint(TAPEGAD_HINT, self.tapeDeckObject.hintText)
+ENDPROC
+
 PROC editSettings(comp:PTR TO tapeDeckObject) OF tapeDeckSettingsForm
   DEF res
 
   self.tapeDeckObject:=comp
-    
+
+  self.updateHint(TAPEGAD_HINT, comp.hintText)  
+  SetGadgetAttrsA(self.gadgetList[ TAPEGAD_IDENT ],0,0,[STRINGA_TEXTVAL,comp.ident,0])   
   SetGadgetAttrsA(self.gadgetList[ TAPEGAD_ANIM ],0,0,[CHOOSER_SELECTED,comp.anim,0]) 
   SetGadgetAttrsA(self.gadgetList[ TAPEGAD_MODE ],0,0,[CHOOSER_SELECTED,comp.mode,0]) 
   SetGadgetAttrsA(self.gadgetList[ TAPEGAD_FRAMES ],0,0,[INTEGER_NUMBER,comp.frames,0]) 
@@ -194,6 +236,7 @@ PROC editSettings(comp:PTR TO tapeDeckObject) OF tapeDeckSettingsForm
 
   res:=self.showModal()
   IF res=MR_OK
+    AstrCopy(comp.ident,Gets(self.gadgetList[ TAPEGAD_IDENT ],STRINGA_TEXTVAL))
     comp.anim:=Gets(self.gadgetList[ TAPEGAD_ANIM ],CHOOSER_SELECTED)   
     comp.mode:=Gets(self.gadgetList[ TAPEGAD_MODE ],CHOOSER_SELECTED)   
     comp.frames:=Gets(self.gadgetList[ TAPEGAD_FRAMES ],INTEGER_NUMBER)   
@@ -205,6 +248,7 @@ EXPORT PROC createPreviewObject(scr) OF tapeDeckObject
     self.previewObject:=0
   IF (tapedeckbase)
     self.previewObject:=NewObjectA( NIL, 'tapedeck.gadget',[TAG_IGNORE,0,
+      GA_ID, self.id,
       TDECK_TAPE, ListItem([TRUE,FALSE],self.anim),
       TDECK_MODE, ListItem([BUT_REWIND,BUT_PLAY, BUT_FORWARD, BUT_STOP, BUT_PAUSE],self.mode),
       TDECK_FRAMES, self.frames,

@@ -17,9 +17,9 @@ OPT MODULE, OSVERSION=37
         'intuition/imageclass',
         'intuition/gadgetclass'
 
-  MODULE '*reactionObject','*reactionForm','*sourcegen'
+  MODULE '*reactionObject','*reactionForm','*sourcegen','*validator'
 
-EXPORT ENUM DATEGAD_MULTISELECT,DATEGAD_SHOWTITLE,DATEGAD_READONLY,DATEGAD_DISABLED,
+EXPORT ENUM DATEGAD_IDENT, DATEGAD_HINT, DATEGAD_MULTISELECT,DATEGAD_SHOWTITLE,DATEGAD_READONLY,DATEGAD_DISABLED,
       DATEGAD_OK, DATEGAD_CHILD, DATEGAD_CANCEL
       
 
@@ -70,6 +70,28 @@ PROC create() OF dateBrowserSettingsForm
     LAYOUT_SPACEOUTER, TRUE,
     LAYOUT_DEFERLAYOUT, TRUE,
 
+      LAYOUT_ADDCHILD, LayoutObject,
+        LAYOUT_SPACEINNER, FALSE,
+        LAYOUT_ORIENTATION, LAYOUT_ORIENT_HORIZ,
+
+        LAYOUT_ADDCHILD, self.gadgetList[ DATEGAD_IDENT ]:=StringObject,
+          GA_ID, DATEGAD_IDENT,
+          GA_RELVERIFY, TRUE,
+          GA_TABCYCLE, TRUE,
+          STRINGA_MAXCHARS, 80,
+        StringEnd,
+        CHILD_LABEL, LabelObject,
+          LABEL_TEXT, 'Identifier',
+        LabelEnd,
+
+        LAYOUT_ADDCHILD,  self.gadgetList[ DATEGAD_HINT ]:=ButtonObject,
+          GA_ID, DATEGAD_HINT,
+          GA_TEXT, 'Hint',
+          GA_RELVERIFY, TRUE,
+          GA_TABCYCLE, TRUE,
+        ButtonEnd,      
+      LayoutEnd,
+       
       LAYOUT_ADDCHILD, LayoutObject,
         LAYOUT_SPACEINNER, FALSE,
         LAYOUT_ORIENTATION, LAYOUT_ORIENT_HORIZ,
@@ -140,8 +162,17 @@ PROC create() OF dateBrowserSettingsForm
   WindowEnd
 
   self.gadgetActions[DATEGAD_CHILD]:={editChildSettings}
+  self.gadgetActions[DATEGAD_HINT]:={editHint}
   self.gadgetActions[DATEGAD_CANCEL]:=MR_CANCEL
   self.gadgetActions[DATEGAD_OK]:=MR_OK
+ENDPROC
+
+PROC editHint(nself,gadget,id,code) OF dateBrowserSettingsForm
+  self:=nself
+  self.setBusy()
+  self.dateBrowserObject.editHint()
+  self.clearBusy()
+  self.updateHint(DATEGAD_HINT, self.dateBrowserObject.hintText)
 ENDPROC
 
 PROC editChildSettings(nself,gadget,id,code) OF dateBrowserSettingsForm
@@ -152,16 +183,26 @@ PROC editChildSettings(nself,gadget,id,code) OF dateBrowserSettingsForm
 ENDPROC
 
 PROC end() OF dateBrowserSettingsForm
-
   END self.gadgetList[NUM_DATE_GADS]
   END self.gadgetActions[NUM_DATE_GADS]
 ENDPROC
+
+EXPORT PROC canClose(modalRes) OF dateBrowserSettingsForm
+  DEF res
+  IF modalRes=MR_CANCEL THEN RETURN TRUE
+  
+  IF checkIdent(self,self.dateBrowserObject,DATEGAD_IDENT)=FALSE
+    RETURN FALSE
+  ENDIF
+ENDPROC TRUE
 
 PROC editSettings(comp:PTR TO dateBrowserObject) OF dateBrowserSettingsForm
   DEF res
 
   self.dateBrowserObject:=comp
   
+  self.updateHint(DATEGAD_HINT, comp.hintText)
+  SetGadgetAttrsA(self.gadgetList[ DATEGAD_IDENT ],0,0,[STRINGA_TEXTVAL,comp.ident,0])
   SetGadgetAttrsA(self.gadgetList[ DATEGAD_MULTISELECT ],0,0,[CHECKBOX_CHECKED,comp.multiSelect,0]) 
   SetGadgetAttrsA(self.gadgetList[ DATEGAD_SHOWTITLE ],0,0,[CHECKBOX_CHECKED,comp.showTitle,0]) 
   SetGadgetAttrsA(self.gadgetList[ DATEGAD_READONLY ],0,0,[CHECKBOX_CHECKED,comp.readOnly,0]) 
@@ -169,6 +210,7 @@ PROC editSettings(comp:PTR TO dateBrowserObject) OF dateBrowserSettingsForm
 
   res:=self.showModal()
   IF res=MR_OK
+    AstrCopy(comp.ident,Gets(self.gadgetList[ DATEGAD_IDENT ],STRINGA_TEXTVAL))
     comp.multiSelect:=Gets(self.gadgetList[ DATEGAD_MULTISELECT ],CHECKBOX_CHECKED)   
     comp.showTitle:=Gets(self.gadgetList[ DATEGAD_SHOWTITLE ],CHECKBOX_CHECKED)   
     comp.readOnly:=Gets(self.gadgetList[ DATEGAD_READONLY ],CHECKBOX_CHECKED)   
@@ -180,6 +222,7 @@ EXPORT PROC createPreviewObject(scr) OF dateBrowserObject
   self.previewObject:=0
   IF (datebrowserbase)
     self.previewObject:=NewObjectA(DateBrowser_GetClass(), NIL,[TAG_IGNORE,0,
+      GA_ID, self.id,
       GA_RELVERIFY, TRUE,
       GA_TABCYCLE, TRUE,
       GA_DISABLED, self.disabled,
@@ -239,7 +282,6 @@ EXPORT PROC serialiseData() OF dateBrowserObject IS
   makeProp(showTitle,FIELDTYPE_CHAR),
   makeProp(readOnly,FIELDTYPE_CHAR),
   makeProp(disabled,FIELDTYPE_CHAR)
-
 ]
 
 EXPORT PROC genCodeProperties(srcGen:PTR TO srcGen) OF dateBrowserObject

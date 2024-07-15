@@ -19,9 +19,9 @@ OPT MODULE, OSVERSION=37
         'intuition/imageclass',
         'intuition/gadgetclass'
 
-  MODULE '*reactionObject','*reactionForm','*colourPicker','*sourceGen'
+  MODULE '*reactionObject','*reactionForm','*colourPicker','*sourceGen','*validator'
 
-EXPORT ENUM FGAUGEGAD_NAME, FGAUGEGAD_MIN, FGAUGEGAD_MAX, FGAUGEGAD_LEVEL, FGAUGEGAD_TICKSIZE,
+EXPORT ENUM FGAUGEGAD_IDENT, FGAUGEGAD_NAME, FGAUGEGAD_HINT, FGAUGEGAD_MIN, FGAUGEGAD_MAX, FGAUGEGAD_LEVEL, FGAUGEGAD_TICKSIZE,
       FGAUGEGAD_TICKS, FGAUGEGAD_ORIENTATION, FGAUGEGAD_JUSTIFICATION, FGAUGEGAD_SHORTTICKS,
       FGAUGEGAD_PERCENT, FGAUGEGAD_TICKPEN, FGAUGEGAD_PERCENTPEN, FGAUGEGAD_EMPTYPEN,
       FGAUGEGAD_FILLPEN,
@@ -89,16 +89,38 @@ PROC create() OF fuelGaugeSettingsForm
     LAYOUT_SPACEOUTER, TRUE,
     LAYOUT_DEFERLAYOUT, TRUE,
 
-      LAYOUT_ADDCHILD, self.gadgetList[ FGAUGEGAD_NAME ]:=StringObject,
-        GA_ID, FGAUGEGAD_NAME,
-        GA_RELVERIFY, TRUE,
-        GA_TABCYCLE, TRUE,
-        STRINGA_MAXCHARS, 80,
-      StringEnd,
+      LAYOUT_ADDCHILD, LayoutObject,
+        LAYOUT_ORIENTATION, LAYOUT_ORIENT_HORIZ,
 
-      CHILD_LABEL, LabelObject,
-        LABEL_TEXT, '_Button Name',
-      LabelEnd,
+        LAYOUT_ADDCHILD, self.gadgetList[ FGAUGEGAD_IDENT ]:=StringObject,
+          GA_ID, FGAUGEGAD_IDENT,
+          GA_RELVERIFY, TRUE,
+          GA_TABCYCLE, TRUE,
+          STRINGA_MAXCHARS, 80,
+        StringEnd,
+
+        CHILD_LABEL, LabelObject,
+          LABEL_TEXT, 'Identifier',
+        LabelEnd,
+
+        LAYOUT_ADDCHILD, self.gadgetList[ FGAUGEGAD_NAME ]:=StringObject,
+          GA_ID, FGAUGEGAD_NAME,
+          GA_RELVERIFY, TRUE,
+          GA_TABCYCLE, TRUE,
+          STRINGA_MAXCHARS, 80,
+        StringEnd,
+
+        CHILD_LABEL, LabelObject,
+          LABEL_TEXT, '_Label',
+        LabelEnd,
+
+        LAYOUT_ADDCHILD,  self.gadgetList[ FGAUGEGAD_HINT ]:=ButtonObject,
+          GA_ID, FGAUGEGAD_HINT,
+          GA_TEXT, 'Hint',
+          GA_RELVERIFY, TRUE,
+          GA_TABCYCLE, TRUE,
+        ButtonEnd,     
+      LayoutEnd,
 
 
       LAYOUT_ADDCHILD, LayoutObject,
@@ -301,8 +323,17 @@ PROC create() OF fuelGaugeSettingsForm
   WindowEnd
 
   self.gadgetActions[FGAUGEGAD_CHILD]:={editChildSettings}
+  self.gadgetActions[FGAUGEGAD_HINT]:={editHint}
   self.gadgetActions[FGAUGEGAD_CANCEL]:=MR_CANCEL
   self.gadgetActions[FGAUGEGAD_OK]:=MR_OK
+ENDPROC
+
+PROC editHint(nself,gadget,id,code) OF fuelGaugeSettingsForm
+  self:=nself
+  self.setBusy()
+  self.fuelGaugeObject.editHint()
+  self.clearBusy()
+  self.updateHint(FGAUGEGAD_HINT, self.fuelGaugeObject.hintText)
 ENDPROC
 
 PROC editChildSettings(nself,gadget,id,code) OF fuelGaugeSettingsForm
@@ -321,11 +352,23 @@ PROC end() OF fuelGaugeSettingsForm
   END self.gadgetActions[NUM_FGAUGE_GADS]
 ENDPROC
 
+
+EXPORT PROC canClose(modalRes) OF fuelGaugeSettingsForm
+  DEF res
+  IF modalRes=MR_CANCEL THEN RETURN TRUE
+  
+  IF checkIdent(self,self.fuelGaugeObject,FGAUGEGAD_IDENT)=FALSE
+    RETURN FALSE
+  ENDIF
+ENDPROC TRUE
+
 PROC editSettings(comp:PTR TO fuelGaugeObject) OF fuelGaugeSettingsForm
   DEF res
 
   self.fuelGaugeObject:=comp
-    
+  self.updateHint(FGAUGEGAD_HINT, comp.hintText)
+
+  SetGadgetAttrsA(self.gadgetList[ FGAUGEGAD_IDENT ],0,0,[STRINGA_TEXTVAL,comp.ident,0])
   SetGadgetAttrsA(self.gadgetList[ FGAUGEGAD_NAME ],0,0,[STRINGA_TEXTVAL,comp.name,0])
   SetGadgetAttrsA(self.gadgetList[ FGAUGEGAD_MIN ],0,0,[INTEGER_NUMBER,comp.min,0]) 
   SetGadgetAttrsA(self.gadgetList[ FGAUGEGAD_MAX ],0,0,[INTEGER_NUMBER,comp.max,0]) 
@@ -346,6 +389,7 @@ PROC editSettings(comp:PTR TO fuelGaugeObject) OF fuelGaugeSettingsForm
 
   res:=self.showModal()
   IF res=MR_OK
+    AstrCopy(comp.ident,Gets(self.gadgetList[ FGAUGEGAD_IDENT ],STRINGA_TEXTVAL))
     AstrCopy(comp.name,Gets(self.gadgetList[ FGAUGEGAD_NAME ],STRINGA_TEXTVAL))
 
     comp.min:=Gets(self.gadgetList[ FGAUGEGAD_MIN ],INTEGER_NUMBER)
@@ -370,6 +414,7 @@ ENDPROC res=MR_OK
 
 EXPORT PROC createPreviewObject(scr) OF fuelGaugeObject
   self.previewObject:=FuelGaugeObject,
+      GA_ID, self.id,
       GA_RELVERIFY, TRUE,
       GA_TABCYCLE, TRUE,
       GA_TEXT, self.name,

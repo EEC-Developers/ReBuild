@@ -17,9 +17,9 @@ OPT MODULE, OSVERSION=37
         'intuition/imageclass',
         'intuition/gadgetclass'
 
-  MODULE '*reactionObject','*reactionForm','*listPicker','*stringlist','*reactionListObject','*reactionLists','*sourceGen'
+  MODULE '*reactionObject','*reactionForm','*listPicker','*stringlist','*reactionListObject','*reactionLists','*sourceGen','*validator'
 
-EXPORT ENUM CHOOSER_GAD_NAME, CHOOSER_GAD_LISTSELECT,
+EXPORT ENUM CHOOSER_GAD_IDENT, CHOOSER_GAD_NAME, CHOOSER_GAD_HINT, CHOOSER_GAD_LISTSELECT,
       CHOOSER_GAD_MAXLABELS, CHOOSER_GAD_ACTIVE, CHOOSER_GAD_WIDTH,
       CHOOSER_GAD_READONLY, CHOOSER_GAD_DISABLED, CHOOSER_GAD_AUTOFIT, 
       CHOOSER_GAD_POPUP, CHOOSER_GAD_DROPDOWN, 
@@ -83,6 +83,16 @@ PROC create() OF chooserSettingsForm
       LAYOUT_ADDCHILD, LayoutObject,
         LAYOUT_ORIENTATION, LAYOUT_ORIENT_HORIZ,
 
+        LAYOUT_ADDCHILD, self.gadgetList[ CHOOSER_GAD_IDENT ]:=StringObject,
+          GA_ID, CHOOSER_GAD_IDENT,
+          GA_RELVERIFY, TRUE,
+          GA_TABCYCLE, TRUE,
+          STRINGA_MAXCHARS, 80,
+        StringEnd,
+        CHILD_LABEL, LabelObject,
+          LABEL_TEXT, '_Identifier',
+        LabelEnd,
+
         LAYOUT_ADDCHILD, self.gadgetList[ CHOOSER_GAD_NAME ]:=StringObject,
           GA_ID, CHOOSER_GAD_NAME,
           GA_RELVERIFY, TRUE,
@@ -90,8 +100,16 @@ PROC create() OF chooserSettingsForm
           STRINGA_MAXCHARS, 80,
         StringEnd,
         CHILD_LABEL, LabelObject,
-          LABEL_TEXT, '_Name',
+          LABEL_TEXT, '_Label',
         LabelEnd,
+
+        LAYOUT_ADDCHILD,  self.gadgetList[ CHOOSER_GAD_HINT ]:=ButtonObject,
+          GA_ID, CHOOSER_GAD_HINT,
+          GA_TEXT, 'Hint',
+          GA_RELVERIFY, TRUE,
+          GA_TABCYCLE, TRUE,
+        ButtonEnd,
+        CHILD_WEIGHTEDWIDTH,50,            
         
         LAYOUT_ADDCHILD,  self.gadgetList[ CHOOSER_GAD_LISTSELECT ]:=ButtonObject,
           GA_ID, CHOOSER_GAD_LISTSELECT,
@@ -213,6 +231,7 @@ PROC create() OF chooserSettingsForm
 
   self.gadgetActions[CHOOSER_GAD_LISTSELECT]:={selectList}
   self.gadgetActions[CHOOSER_GAD_CHILD]:={editChildSettings}
+  self.gadgetActions[CHOOSER_GAD_HINT]:={editHint}
   self.gadgetActions[CHOOSER_GAD_CANCEL]:=MR_CANCEL
   self.gadgetActions[CHOOSER_GAD_OK]:=MR_OK
 ENDPROC
@@ -232,6 +251,14 @@ PROC selectList(nself,gadget,id,code) OF chooserSettingsForm
   self.clearBusy()
 ENDPROC
 
+PROC editHint(nself,gadget,id,code) OF chooserSettingsForm
+  self:=nself
+  self.setBusy()
+  self.chooserObject.editHint()
+  self.clearBusy()
+  self.updateHint(CHOOSER_GAD_HINT, self.chooserObject.hintText)
+ENDPROC
+
 PROC editChildSettings(nself,gadget,id,code) OF chooserSettingsForm
   self:=nself
   self.setBusy()
@@ -244,12 +271,24 @@ PROC end() OF chooserSettingsForm
   END self.gadgetActions[NUM_CHOOSER_GADS]
 ENDPROC
 
+EXPORT PROC canClose(modalRes) OF chooserSettingsForm
+  DEF res
+  IF modalRes=MR_CANCEL THEN RETURN TRUE
+  
+  IF checkIdent(self,self.chooserObject,CHOOSER_GAD_IDENT)=FALSE
+    RETURN FALSE
+  ENDIF
+ENDPROC TRUE
+
 PROC editSettings(comp:PTR TO chooserObject) OF chooserSettingsForm
   DEF res
 
   self.chooserObject:=comp
   self.selectedListId:=comp.listObjectId
 
+  self.updateHint(CHOOSER_GAD_HINT, comp.hintText)
+
+  SetGadgetAttrsA(self.gadgetList[ CHOOSER_GAD_IDENT ],0,0,[STRINGA_TEXTVAL,comp.ident,0])
   SetGadgetAttrsA(self.gadgetList[ CHOOSER_GAD_NAME ],0,0,[STRINGA_TEXTVAL,comp.name,0])
 
   SetGadgetAttrsA(self.gadgetList[ CHOOSER_GAD_MAXLABELS ],0,0,[INTEGER_NUMBER,comp.maxLabels,0])
@@ -264,6 +303,7 @@ PROC editSettings(comp:PTR TO chooserObject) OF chooserSettingsForm
 
   res:=self.showModal()
   IF res=MR_OK
+    AstrCopy(comp.ident,Gets(self.gadgetList[ CHOOSER_GAD_IDENT ],STRINGA_TEXTVAL))
     AstrCopy(comp.name,Gets(self.gadgetList[ CHOOSER_GAD_NAME ],STRINGA_TEXTVAL))
     comp.listObjectId:=self.selectedListId
     comp.maxLabels:=Gets(self.gadgetList[ CHOOSER_GAD_MAXLABELS ],INTEGER_NUMBER)
@@ -311,6 +351,7 @@ EXPORT PROC createPreviewObject(scr) OF chooserObject
   IF self.labels1 THEN freeChooserLabels( self.labels1 )
 
   self.previewObject:=ChooserObject, 
+      GA_ID, self.id,
       GA_RELVERIFY, TRUE,
       GA_TABCYCLE, TRUE,
       GA_READONLY, self.readOnly,

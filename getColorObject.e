@@ -18,9 +18,9 @@ OPT MODULE, OSVERSION=37
         'intuition/imageclass',
         'intuition/gadgetclass'
 
-  MODULE '*reactionObject','*reactionForm','*sourcegen'
+  MODULE '*reactionObject','*reactionForm','*sourcegen','*validator'
 
-EXPORT ENUM GETCOLGAD_NAME, GETCOLGAD_TITLE,GETCOLGAD_COLORWHEEL,GETCOLGAD_RGBSLIDERS,GETCOLGAD_HSBSLIDERS,
+EXPORT ENUM GETCOLGAD_IDENT, GETCOLGAD_NAME, GETCOLGAD_HINT, GETCOLGAD_TITLE,GETCOLGAD_COLORWHEEL,GETCOLGAD_RGBSLIDERS,GETCOLGAD_HSBSLIDERS,
       GETCOLGAD_SWITCHMODE, GETCOLGAD_INITIAL, GETCOLGAD_SHOWRGB, GETCOLGAD_SHOWHSB,GETCOLGAD_DISABLED,  
       GETCOLGAD_OK, GETCOLGAD_CHILD, GETCOLGAD_CANCEL
 
@@ -77,16 +77,39 @@ PROC create() OF getColorSettingsForm
     LAYOUT_SPACEOUTER, TRUE,
     LAYOUT_DEFERLAYOUT, TRUE,
 
-      LAYOUT_ADDCHILD, self.gadgetList[ GETCOLGAD_NAME ]:=StringObject,
-        GA_ID, GETCOLGAD_NAME,
-        GA_RELVERIFY, TRUE,
-        GA_TABCYCLE, TRUE,
-        STRINGA_MAXCHARS, 80,
-      StringEnd,
+      LAYOUT_ADDCHILD, LayoutObject,
+        LAYOUT_SPACEINNER, FALSE,
+        LAYOUT_ORIENTATION, LAYOUT_ORIENT_HORIZ,
 
-      CHILD_LABEL, LabelObject,
-        LABEL_TEXT, '_GetColor Name',
-      LabelEnd,
+        LAYOUT_ADDCHILD, self.gadgetList[ GETCOLGAD_IDENT ]:=StringObject,
+          GA_ID, GETCOLGAD_IDENT,
+          GA_RELVERIFY, TRUE,
+          GA_TABCYCLE, TRUE,
+          STRINGA_MAXCHARS, 80,
+        StringEnd,
+
+        CHILD_LABEL, LabelObject,
+          LABEL_TEXT, 'Identifier',
+        LabelEnd,
+
+        LAYOUT_ADDCHILD, self.gadgetList[ GETCOLGAD_NAME ]:=StringObject,
+          GA_ID, GETCOLGAD_NAME,
+          GA_RELVERIFY, TRUE,
+          GA_TABCYCLE, TRUE,
+          STRINGA_MAXCHARS, 80,
+        StringEnd,
+
+        CHILD_LABEL, LabelObject,
+          LABEL_TEXT, '_Label',
+        LabelEnd,
+
+       LAYOUT_ADDCHILD,  self.gadgetList[ GETCOLGAD_HINT ]:=ButtonObject,
+          GA_ID, GETCOLGAD_HINT,
+          GA_TEXT, 'Hint',
+          GA_RELVERIFY, TRUE,
+          GA_TABCYCLE, TRUE,
+        ButtonEnd,          
+      LayoutEnd,
 
       LAYOUT_ADDCHILD, self.gadgetList[ GETCOLGAD_TITLE ]:=StringObject,
         GA_ID, GETCOLGAD_TITLE,
@@ -98,7 +121,6 @@ PROC create() OF getColorSettingsForm
       CHILD_LABEL, LabelObject,
         LABEL_TEXT, 'Title text',
       LabelEnd,
-
 
       LAYOUT_ADDCHILD, LayoutObject,
         LAYOUT_SPACEINNER, FALSE,
@@ -167,7 +189,12 @@ PROC create() OF getColorSettingsForm
           GA_TEXT, 'Show RGB Values',
           CHECKBOX_TEXTPLACE, PLACETEXT_LEFT,
         CheckBoxEnd,
+      LayoutEnd,
 
+      LAYOUT_ADDCHILD, LayoutObject,
+        LAYOUT_SPACEINNER, FALSE,
+        LAYOUT_ORIENTATION, LAYOUT_ORIENT_HORIZ,
+      
         LAYOUT_ADDCHILD, self.gadgetList[ GETCOLGAD_SHOWHSB ]:=CheckBoxObject,
           GA_ID, GETCOLGAD_SHOWHSB,
           GA_RELVERIFY, TRUE,
@@ -184,6 +211,7 @@ PROC create() OF getColorSettingsForm
           CHECKBOX_TEXTPLACE, PLACETEXT_LEFT,
         CheckBoxEnd,
       LayoutEnd,
+
 
       LAYOUT_ADDCHILD, LayoutObject,
         LAYOUT_ORIENTATION, LAYOUT_ORIENT_HORIZ,
@@ -214,8 +242,17 @@ PROC create() OF getColorSettingsForm
   WindowEnd
 
   self.gadgetActions[GETCOLGAD_CHILD]:={editChildSettings}
+  self.gadgetActions[GETCOLGAD_HINT]:={editHint}
   self.gadgetActions[GETCOLGAD_CANCEL]:=MR_CANCEL
   self.gadgetActions[GETCOLGAD_OK]:=MR_OK
+ENDPROC
+
+PROC editHint(nself,gadget,id,code) OF getColorSettingsForm
+  self:=nself
+  self.setBusy()
+  self.getColorObject.editHint()
+  self.clearBusy()
+  self.updateHint(GETCOLGAD_HINT, self.getColorObject.hintText)
 ENDPROC
 
 PROC editChildSettings(nself,gadget,id,code) OF getColorSettingsForm
@@ -231,11 +268,22 @@ PROC end() OF getColorSettingsForm
   END self.gadgetActions[NUM_GETCOL_GADS]
 ENDPROC
 
+EXPORT PROC canClose(modalRes) OF getColorSettingsForm
+  DEF res
+  IF modalRes=MR_CANCEL THEN RETURN TRUE
+  
+  IF checkIdent(self,self.getColorObject,GETCOLGAD_IDENT)=FALSE
+    RETURN FALSE
+  ENDIF
+ENDPROC TRUE
+
 PROC editSettings(comp:PTR TO getColorObject) OF getColorSettingsForm
   DEF res
 
   self.getColorObject:=comp
+  self.updateHint(GETCOLGAD_HINT, comp.hintText)
 
+  SetGadgetAttrsA(self.gadgetList[ GETCOLGAD_IDENT ],0,0,[STRINGA_TEXTVAL,comp.ident,0])
   SetGadgetAttrsA(self.gadgetList[ GETCOLGAD_NAME ],0,0,[STRINGA_TEXTVAL,comp.name,0])
   SetGadgetAttrsA(self.gadgetList[ GETCOLGAD_TITLE ],0,0,[STRINGA_TEXTVAL,comp.title,0])
   SetGadgetAttrsA(self.gadgetList[ GETCOLGAD_COLORWHEEL ],0,0,[CHECKBOX_CHECKED,comp.colorWheel,0]) 
@@ -249,7 +297,7 @@ PROC editSettings(comp:PTR TO getColorObject) OF getColorSettingsForm
 
   res:=self.showModal()
   IF res=MR_OK
-
+    AstrCopy(comp.ident,Gets(self.gadgetList[ GETCOLGAD_IDENT ],STRINGA_TEXTVAL))
     AstrCopy(comp.name,Gets(self.gadgetList[ GETCOLGAD_NAME ],STRINGA_TEXTVAL))
     AstrCopy(comp.title,Gets(self.gadgetList[ GETCOLGAD_TITLE ],STRINGA_TEXTVAL))
     comp.colorWheel:=Gets(self.gadgetList[ GETCOLGAD_COLORWHEEL ],CHECKBOX_CHECKED)   
@@ -268,6 +316,7 @@ EXPORT PROC createPreviewObject(scr) OF getColorObject
   self.previewObject:=0
   IF (getcolorbase)
     self.previewObject:=NewObjectA(GetColor_GetClass(), NIL,[TAG_IGNORE,0,
+        GA_ID, self.id,
         GA_RELVERIFY, TRUE,
         GA_TABCYCLE, TRUE,
         GA_DISABLED, self.disabled,

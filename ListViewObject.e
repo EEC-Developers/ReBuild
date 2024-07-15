@@ -21,9 +21,9 @@ OPT MODULE, OSVERSION=37
         'intuition/imageclass',
         'intuition/gadgetclass'
 
-  MODULE '*reactionObject','*reactionForm','*listPicker','*stringlist','*reactionListObject','*reactionLists','*sourceGen'
+  MODULE '*reactionObject','*reactionForm','*listPicker','*stringlist','*reactionListObject','*reactionLists','*sourceGen','*validator'
 
-EXPORT ENUM LVIEWGAD_LISTSELECT, LVIEWGAD_MULTISELECT,
+EXPORT ENUM LVIEWGAD_IDENT, LVIEWGAD_HINT, LVIEWGAD_LISTSELECT, LVIEWGAD_MULTISELECT,
       LVIEWGAD_OK, LVIEWGAD_CHILD, LVIEWGAD_CANCEL
       
 
@@ -75,21 +75,46 @@ PROC create() OF listViewSettingsForm
     LAYOUT_SPACEOUTER, TRUE,
     LAYOUT_DEFERLAYOUT, TRUE,
 
-      LAYOUT_ADDCHILD,  self.gadgetList[ LVIEWGAD_LISTSELECT ]:=ButtonObject,
-        GA_ID, LVIEWGAD_LISTSELECT,
-        GA_TEXT, '_Pick a List',
-        GA_RELVERIFY, TRUE,
-        GA_TABCYCLE, TRUE,
-      ButtonEnd,
+      LAYOUT_ADDCHILD, LayoutObject,
+        LAYOUT_ORIENTATION, LAYOUT_ORIENT_HORIZ,
 
-      LAYOUT_ADDCHILD, self.gadgetList[ LVIEWGAD_MULTISELECT ]:=CheckBoxObject,
-        GA_ID, LVIEWGAD_MULTISELECT,
-        GA_RELVERIFY, TRUE,
-        GA_TABCYCLE, TRUE,
-        GA_TEXT, 'Multi-select',
-        ->CHECKBOX_TEXTPLACE, PLACETEXT_LEFT,
-      CheckBoxEnd,
+        LAYOUT_ADDCHILD, self.gadgetList[ LVIEWGAD_IDENT ]:=StringObject,
+          GA_ID, LVIEWGAD_IDENT,
+          GA_RELVERIFY, TRUE,
+          GA_TABCYCLE, TRUE,
+          STRINGA_MAXCHARS, 80,
+        StringEnd,
+        CHILD_LABEL, LabelObject,
+          LABEL_TEXT, 'Identifier',
+        LabelEnd,
 
+        LAYOUT_ADDCHILD,  self.gadgetList[ LVIEWGAD_HINT ]:=ButtonObject,
+          GA_ID, LVIEWGAD_HINT,
+          GA_TEXT, 'Hint',
+          GA_RELVERIFY, TRUE,
+          GA_TABCYCLE, TRUE,
+        ButtonEnd,          
+      LayoutEnd,
+      
+      LAYOUT_ADDCHILD, LayoutObject,
+        LAYOUT_ORIENTATION, LAYOUT_ORIENT_HORIZ,
+
+        LAYOUT_ADDCHILD,  self.gadgetList[ LVIEWGAD_LISTSELECT ]:=ButtonObject,
+          GA_ID, LVIEWGAD_LISTSELECT,
+          GA_TEXT, '_Pick a List',
+          GA_RELVERIFY, TRUE,
+          GA_TABCYCLE, TRUE,
+        ButtonEnd,
+
+        LAYOUT_ADDCHILD, self.gadgetList[ LVIEWGAD_MULTISELECT ]:=CheckBoxObject,
+          GA_ID, LVIEWGAD_MULTISELECT,
+          GA_RELVERIFY, TRUE,
+          GA_TABCYCLE, TRUE,
+          GA_TEXT, 'Multi-select',
+          CHECKBOX_TEXTPLACE, PLACETEXT_LEFT,
+        CheckBoxEnd,     
+      LayoutEnd,
+      
       LAYOUT_ADDCHILD, LayoutObject,
         LAYOUT_ORIENTATION, LAYOUT_ORIENT_HORIZ,
 
@@ -120,6 +145,7 @@ PROC create() OF listViewSettingsForm
 
   self.gadgetActions[LVIEWGAD_LISTSELECT]:={selectList}
   self.gadgetActions[LVIEWGAD_CHILD]:={editChildSettings}
+  self.gadgetActions[LVIEWGAD_HINT]:={editHint}  
   self.gadgetActions[LVIEWGAD_CANCEL]:=MR_CANCEL
   self.gadgetActions[LVIEWGAD_OK]:=MR_OK
 ENDPROC
@@ -151,17 +177,37 @@ PROC end() OF listViewSettingsForm
   END self.gadgetActions[NUM_LVIEW_GADS]
 ENDPROC
 
+EXPORT PROC canClose(modalRes) OF listViewSettingsForm
+  DEF res
+  IF modalRes=MR_CANCEL THEN RETURN TRUE
+  
+  IF checkIdent(self,self.listViewObject,LVIEWGAD_IDENT)=FALSE
+    RETURN FALSE
+  ENDIF
+ENDPROC TRUE
+
+PROC editHint(nself,gadget,id,code) OF listViewSettingsForm
+  self:=nself
+  self.setBusy()
+  self.listViewObject.editHint()
+  self.clearBusy()
+  self.updateHint(LVIEWGAD_HINT, self.listViewObject.hintText)
+ENDPROC
+
 PROC editSettings(comp:PTR TO listViewObject) OF listViewSettingsForm
   DEF res
 
   self.listViewObject:=comp
   self.selectedListId:=comp.listObjectId
-  
+
+  self.updateHint(LVIEWGAD_HINT, comp.hintText)
+  SetGadgetAttrsA(self.gadgetList[ LVIEWGAD_IDENT ],0,0,[STRINGA_TEXTVAL,comp.ident,0])
   SetGadgetAttrsA(self.gadgetList[ LVIEWGAD_MULTISELECT ],0,0,[LVIEWGAD_MULTISELECT,comp.multiSelect,0]) 
 
   res:=self.showModal()
   IF res=MR_OK
     comp.listObjectId:=self.selectedListId
+    AstrCopy(comp.ident,Gets(self.gadgetList[ LVIEWGAD_IDENT ],STRINGA_TEXTVAL))
     comp.multiSelect:=Gets(self.gadgetList[ LVIEWGAD_MULTISELECT ],CHECKBOX_CHECKED)   
   ENDIF
 ENDPROC res=MR_OK
@@ -171,6 +217,7 @@ EXPORT PROC createPreviewObject(scr) OF listViewObject
   IF (listviewbase)
     IF self.labels1 THEN self.freeListViewLabels( self.labels1 )
     self.previewObject:=NewObjectA( ListView_GetClass(), NIL,[TAG_IGNORE,0,
+        GA_ID, self.id,
         LISTVIEW_LABELS, self.labels1:=self.makeListViewList(self.listObjectId),
         LISTVIEW_MULTISELECT, self.multiSelect,
       TAG_END])

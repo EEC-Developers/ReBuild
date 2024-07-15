@@ -3,7 +3,7 @@ OPT MODULE,LARGE
   MODULE 'images/drawlist'
   MODULE '*fileStreamer','*sourceGen','*reactionObject','*windowObject','*menuObject','*stringlist','*screenObject'
   MODULE '*chooserObject','*clickTabObject','*radioObject','*listBrowserObject','*tabsObject','*reactionListObject',
-         '*drawListObject','*speedBarObject','*listViewObject','*rexxObject'
+         '*drawListObject','*speedBarObject','*listViewObject','*rexxObject','*requesterObject'
 
 EXPORT OBJECT cSrcGen OF srcGen
 ENDOBJECT
@@ -69,7 +69,8 @@ PROC createEnum(enumName:PTR TO CHAR, listObjects:PTR TO stdlist, enumType) OF c
   self.writeLine(' };')
 ENDPROC
 
-PROC genHeader(screenObject:PTR TO screenObject,rexxObject:PTR TO rexxObject, windowItems:PTR TO stdlist, windowLayouts:PTR TO stdlist, sharedPort) OF cSrcGen
+PROC genHeader(screenObject:PTR TO screenObject,rexxObject:PTR TO rexxObject, requesterObject:PTR TO requesterObject, 
+                windowItems:PTR TO stdlist, windowLayouts:PTR TO stdlist, sharedPort) OF cSrcGen
   DEF tempStr[200]:STRING
   DEF menuItem:PTR TO menuItem
   DEF itemName[200]:STRING
@@ -80,6 +81,8 @@ PROC genHeader(screenObject:PTR TO screenObject,rexxObject:PTR TO rexxObject, wi
   DEF layoutObject:PTR TO reactionObject
   DEF listObjects:PTR TO stdlist
   DEF listObject:PTR TO reactionObject
+  DEF reqItem:PTR TO requesterItem
+  DEF bodyText
 
   hasarexx:=(rexxObject.commands.count()>0) AND (StrLen(rexxObject.hostName)>0)
 
@@ -149,6 +152,10 @@ PROC genHeader(screenObject:PTR TO screenObject,rexxObject:PTR TO rexxObject, wi
 
   IF self.libsused[TYPE_VIRTUAL] THEN self.writeLine('#include <proto/virtual.h>')
   IF self.libsused[TYPE_SKETCH] THEN self.writeLine('#include <proto/sketchboard.h>')
+  IF requesterObject.requesterItems.count()>0
+    self.writeLine('#include <proto/requester.h>')
+    self.writeLine('#include <classes/requester.h>')
+  ENDIF
   
   self.writeLine('')
   self.writeLine('#include <libraries/gadtools.h>')
@@ -479,6 +486,37 @@ PROC genHeader(screenObject:PTR TO screenObject,rexxObject:PTR TO rexxObject, wi
     ENDIF
   ENDIF
 
+  FOR i:=0 TO requesterObject.requesterItems.count()-1
+    reqItem:=requesterObject.requesterItems.item(i)
+    StringF(tempStr,'int requester\d(Object *reactionWindow)\n',i)
+    self.writeLine(tempStr)
+    self.writeLine('{')
+    self.writeLine('  Object *reqobj;')
+    self.writeLine('  ULONG win;')
+    self.writeLine('  int res=0;')
+    self.writeLine('')
+
+    self.writeLine('  GetAttr(WINDOW_Window, reactionWindow, &win);')
+    bodyText:=reqItem.bodyText.makeTextString('\\n')
+	  StringF(tempStr,'  reqobj = NewObject(REQUESTER_GetClass(), NULL, REQ_Type, \s, REQ_Image, \s, REQ_TitleText, \q\s\q, REQ_BodyText,\q\s\q, REQ_GadgetText, \q\s\q, TAG_DONE);',
+                            ListItem(['REQTYPE_INFO','REQTYPE_INTEGER','REQTYPE_STRING'],reqItem.reqType),
+                            ListItem(['REQIMAGE_DEFAULT', 'REQIMAGE_INFO', 'REQIMAGE_WARNING', 'REQIMAGE_ERROR', 'REQIMAGE_QUESTION', 'REQIMAGE_INSERTDISK'],reqItem.image),
+                            reqItem.titleText,
+                            bodyText,
+                            reqItem.gadgetsText)
+    Dispose(bodyText)
+    self.writeLine(tempStr)
+    self.writeLine('  if (reqobj)')
+    self.writeLine('  {')
+    self.writeLine('    res=DoMethod(reqobj, RM_OPENREQ, NULL, win, NULL);')
+    self.writeLine('    DisposeObject(reqobj);')
+    self.writeLine('  }')
+    self.writeLine('  return res;')   
+    self.writeLine('}')
+    self.writeLine('')
+  ENDFOR
+
+
   self.writeLine('struct Library *WindowBase = NULL,')
   IF hasarexx THEN self.writeLine('               *ARexxBase = NULL,')
   IF self.libsused[TYPE_BUTTON] THEN self.writeLine('               *ButtonBase = NULL,')
@@ -521,6 +559,8 @@ PROC genHeader(screenObject:PTR TO screenObject,rexxObject:PTR TO rexxObject, wi
   IF self.libsused[TYPE_VIRTUAL] THEN self.writeLine('               *VirtualBase = NULL,')
   IF self.libsused[TYPE_SKETCH] THEN self.writeLine('               *SketchBoardBase = NULL,')
   IF self.libsused[TYPE_TABS] THEN self.writeLine('               *TabsBase = NULL,')
+  IF requesterObject.requesterItems.count()>0 THEN self.writeLine('               *RequesterBase = NULL,')
+ 
   self.writeLine('               *GadToolsBase = NULL,')
   self.writeLine('               *LayoutBase = NULL,')
   self.writeLine('               *IconBase = NULL;')
@@ -708,6 +748,9 @@ PROC genHeader(screenObject:PTR TO screenObject,rexxObject:PTR TO rexxObject, wi
   IF self.libsused[TYPE_TABS]
     self.writeLine('  if( !(TabsBase = (struct Library*) OpenLibrary("gadgets/tabs.gadget",0L) ) ) return 0;')
   ENDIF
+  IF requesterObject.requesterItems.count()>0
+    self.writeLine('  if( !(RequesterBase = (struct Library*) OpenLibrary("classes/requester.class",0L) ) ) return 0;')
+  ENDIF
 
   self.genScreenCreate(screenObject)
   self.writeLine('  if( !(gVisinfo = GetVisualInfo( gScreen, TAG_DONE ) ) ) return 0;')
@@ -785,6 +828,9 @@ PROC genHeader(screenObject:PTR TO screenObject,rexxObject:PTR TO rexxObject, wi
   self.writeLine('  if (WindowBase) CloseLibrary( (struct Library *)WindowBase );')
   IF hasarexx
     self.writeLine('  if (ARexxBase) CloseLibrary( (struct Library *)ARexxBase );')
+  ENDIF
+  IF requesterObject.requesterItems.count()>0
+    self.writeLine('  if (RequesterBase) CloseLibrary( (struct Library *)RequesterBase );')
   ENDIF
 
   self.writeLine('}')
@@ -872,6 +918,9 @@ PROC genWindowHeader(count, windowObject:PTR TO windowObject, menuObject:PTR TO 
   DEF menuItem:PTR TO menuItem
   DEF itemType
   DEF itemName[200]:STRING
+  DEF hintText:PTR TO CHAR
+  DEF menuFlags[60]:STRING
+  DEF currMenu,mut
   DEF commKey[10]:STRING
   DEF directiveStr[20]:STRING
   DEF listObjects:PTR TO stdlist
@@ -906,10 +955,38 @@ PROC genWindowHeader(count, windowObject:PTR TO windowObject, menuObject:PTR TO 
 
         IF StrLen(menuItem.commKey) THEN StringF(commKey,'\q\s\q',menuItem.commKey)
       ELSE
+        currMenu:=menuItem
+        mut:=0
         itemType:='NM_TITLE'
         StringF(itemName,'\q\s\q',menuItem.itemName)      
       ENDIF
-      StringF(tempStr,'    { \s, \s,\s,0,0,NULL },',itemType,itemName,commKey)
+
+      StrCopy(menuFlags,'')
+      IF menuItem.type<>MENU_TYPE_MENU
+        mut:=menuObject.makeMutual(currMenu,i)
+        IF menuItem.check
+          StrAdd(menuFlags,'CHECKIT')
+        ENDIF
+        IF menuItem.toggle
+          IF EstrLen(menuFlags) THEN StrAdd(menuFlags,' | ')
+          StrAdd(menuFlags,'MENUTOGGLE')
+        ENDIF
+        IF menuItem.checked
+          IF EstrLen(menuFlags) THEN StrAdd(menuFlags,' | ')
+          StrAdd(menuFlags,'CHECKED')
+        ENDIF
+      ENDIF
+      IF menuItem.disabled
+        IF EstrLen(menuFlags) THEN StrAdd(menuFlags,' | ')
+        IF menuItem.type=MENU_TYPE_MENU
+          StrAdd(menuFlags,'NM_MENUDISABLED')
+        ELSE
+          StrAdd(menuFlags,'NM_ITEMDISABLED')
+        ENDIF
+      ENDIF
+      IF EstrLen(menuFlags)=0 THEN StrCopy(menuFlags,'0')
+
+      StringF(tempStr,'    { \s, \s, \s, \s, \d, NULL },',itemType,itemName,commKey,menuFlags,mut)
       self.writeLine(tempStr)
     ENDFOR
     self.writeLine('    { NM_END, NULL, 0, 0, 0, (APTR)0 }')
@@ -922,6 +999,34 @@ PROC genWindowHeader(count, windowObject:PTR TO windowObject, menuObject:PTR TO 
   self.writeLine('  Object *window_object = NULL;')
 
   NEW listObjects.stdlist(20)
+  IF windowObject.gadgetHelp
+    layoutObject.findObjectsByType(listObjects,-1)
+    self.writeLine('  struct HintInfo hintInfo[] =')
+    self.writeLine('  {')
+
+    FOR i:=0 TO listObjects.count()-1
+      reactionObject:=listObjects.item(i)
+      IF reactionObject.hintText
+        IF self.useIds
+          StringF(itemName,'\s_id',reactionObject.ident)
+        ELSE
+          StringF(itemName,'\s',reactionObject.ident)
+        ENDIF
+        LowerStr(itemName)
+
+        hintText:=reactionObject.hintText.makeTextString('\\n')
+        StringF(tempStr,'    {\s,-1,\q\s\q,0},',itemName,hintText)
+        Dispose(hintText)
+        self.writeLine(tempStr)
+      ENDIF
+    ENDFOR
+    self.writeLine('    {-1,-1,NULL,0}')
+
+    self.writeLine('  };')
+    
+    listObjects.clear()
+  ENDIF
+
   layoutObject.findObjectsByType(listObjects,TYPE_CHOOSER)
   layoutObject.findObjectsByType(listObjects,TYPE_RADIO)
   layoutObject.findObjectsByType(listObjects,TYPE_CLICKTAB)

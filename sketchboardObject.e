@@ -20,9 +20,9 @@ OPT MODULE, OSVERSION=37
         'intuition/imageclass',
         'intuition/gadgetclass'
 
-  MODULE '*reactionObject','*reactionForm','*colourPicker', '*sourcegen'
+  MODULE '*reactionObject','*reactionForm','*colourPicker', '*sourcegen','*validator'
 
-EXPORT ENUM SBOARDGAD_WIDTH, SBOARDGAD_HEIGHT, SBOARDGAD_PEN, SBOARDGAD_ACTIVETOOL,
+EXPORT ENUM SBOARDGAD_IDENT, SBOARDGAD_HINT, SBOARDGAD_WIDTH, SBOARDGAD_HEIGHT, SBOARDGAD_PEN, SBOARDGAD_ACTIVETOOL,
       SBOARDGAD_GRID, SBOARDGAD_SCALE, SBOARDGAD_BEVEL, SBOARDGAD_READONLY, SBOARDGAD_DISABLED,
       SBOARDGAD_OK, SBOARDGAD_CHILD, SBOARDGAD_CANCEL
       
@@ -61,7 +61,7 @@ PROC create() OF sketchboardSettingsForm
     WA_LEFT, 0,
     WA_TOP, 0,
     WA_HEIGHT, 60,
-    WA_WIDTH, 260,
+    WA_WIDTH, 450,
     WA_MINWIDTH, 150,
     WA_MAXWIDTH, 8192,
     WA_MINHEIGHT, 60,
@@ -80,6 +80,33 @@ PROC create() OF sketchboardSettingsForm
     WINDOW_PARENTGROUP, VLayoutObject,
     LAYOUT_SPACEOUTER, TRUE,
     LAYOUT_DEFERLAYOUT, TRUE,
+
+      LAYOUT_ADDCHILD, LayoutObject,
+        LAYOUT_ORIENTATION, LAYOUT_ORIENT_HORIZ,
+          LAYOUT_ADDCHILD, self.gadgetList[ SBOARDGAD_IDENT ]:=StringObject,
+            GA_ID, SBOARDGAD_IDENT,
+            GA_RELVERIFY, TRUE,
+            GA_TABCYCLE, TRUE,
+            STRINGA_MAXCHARS, 80,
+          StringEnd,
+          CHILD_LABEL, LabelObject,
+            LABEL_TEXT, 'Identifier',
+          LabelEnd,
+
+          LAYOUT_ADDCHILD,  self.gadgetList[ SBOARDGAD_HINT ]:=ButtonObject,
+            GA_ID, SBOARDGAD_HINT,
+            GA_TEXT, 'Hint',
+            GA_RELVERIFY, TRUE,
+            GA_TABCYCLE, TRUE,
+          ButtonEnd,           
+  
+          LAYOUT_ADDCHILD,  self.gadgetList[ SBOARDGAD_PEN ]:=ButtonObject,
+            GA_ID, SBOARDGAD_PEN,
+            GA_TEXT, 'Pen',
+            GA_RELVERIFY, TRUE,
+            GA_TABCYCLE, TRUE,
+          ButtonEnd,
+      LayoutEnd,
 
       LAYOUT_ADDCHILD, LayoutObject,
         LAYOUT_ORIENTATION, LAYOUT_ORIENT_HORIZ,
@@ -109,32 +136,22 @@ PROC create() OF sketchboardSettingsForm
         LabelEnd,
       LayoutEnd,
 
-      LAYOUT_ADDCHILD, LayoutObject,
-        LAYOUT_ORIENTATION, LAYOUT_ORIENT_HORIZ,
-
-          LAYOUT_ADDCHILD,  self.gadgetList[ SBOARDGAD_PEN ]:=ButtonObject,
-            GA_ID, SBOARDGAD_PEN,
-            GA_TEXT, 'Pen',
-            GA_RELVERIFY, TRUE,
-            GA_TABCYCLE, TRUE,
-          ButtonEnd,
-        
-        LAYOUT_ADDCHILD, self.gadgetList[ SBOARDGAD_ACTIVETOOL ]:=ChooserObject,
-          GA_ID, SBOARDGAD_ACTIVETOOL,
-          GA_RELVERIFY, TRUE,
-          GA_TABCYCLE, TRUE,
-          CHOOSER_POPUP, TRUE,
-          CHOOSER_MAXLABELS, 12,
-          CHOOSER_ACTIVE, 0,
-          CHOOSER_WIDTH, -1,
-          CHOOSER_LABELS, self.labels1:=chooserLabelsA(['SGTOOL_FREEHAND_DOTS','SGTOOL_FREEHAND','SGTOOL_ELLIPSE','SGTOOL_ELLIPSE_FILLED','SGTOOL_RECT',
-             'SGTOOL_RECT_FILLED','SGTOOL_LINE','SGTOOL_FILL','SGTOOL_GETPEN','SGTOOL_HOTSPOT','SGTOOL_SELECT',
-             'SGTOOL_MOVE',0]),
-        ChooserEnd,
-        CHILD_LABEL, LabelObject,
-          LABEL_TEXT, 'Active Tool',
-        LabelEnd,
-      LayoutEnd,
+      
+      LAYOUT_ADDCHILD, self.gadgetList[ SBOARDGAD_ACTIVETOOL ]:=ChooserObject,
+        GA_ID, SBOARDGAD_ACTIVETOOL,
+        GA_RELVERIFY, TRUE,
+        GA_TABCYCLE, TRUE,
+        CHOOSER_POPUP, TRUE,
+        CHOOSER_MAXLABELS, 12,
+        CHOOSER_ACTIVE, 0,
+        CHOOSER_WIDTH, -1,
+        CHOOSER_LABELS, self.labels1:=chooserLabelsA(['SGTOOL_FREEHAND_DOTS','SGTOOL_FREEHAND','SGTOOL_ELLIPSE','SGTOOL_ELLIPSE_FILLED','SGTOOL_RECT',
+           'SGTOOL_RECT_FILLED','SGTOOL_LINE','SGTOOL_FILL','SGTOOL_GETPEN','SGTOOL_HOTSPOT','SGTOOL_SELECT',
+           'SGTOOL_MOVE',0]),
+      ChooserEnd,
+      CHILD_LABEL, LabelObject,
+        LABEL_TEXT, 'Active Tool',
+      LabelEnd,
 
       LAYOUT_ADDCHILD, LayoutObject,
         LAYOUT_ORIENTATION, LAYOUT_ORIENT_HORIZ,
@@ -218,6 +235,7 @@ PROC create() OF sketchboardSettingsForm
 
   self.gadgetActions[SBOARDGAD_PEN]:={selectPen}
   self.gadgetActions[SBOARDGAD_CHILD]:={editChildSettings}
+  self.gadgetActions[SBOARDGAD_HINT]:={editHint}  
   self.gadgetActions[SBOARDGAD_CANCEL]:=MR_CANCEL
   self.gadgetActions[SBOARDGAD_OK]:=MR_OK
 ENDPROC
@@ -252,6 +270,23 @@ PROC end() OF sketchboardSettingsForm
   END self.gadgetActions[NUM_SBOARD_GADS]
 ENDPROC
 
+EXPORT PROC canClose(modalRes) OF sketchboardSettingsForm
+  DEF res
+  IF modalRes=MR_CANCEL THEN RETURN TRUE
+  
+  IF checkIdent(self,self.sketchboardObject,SBOARDGAD_IDENT)=FALSE
+    RETURN FALSE
+  ENDIF
+ENDPROC TRUE
+
+PROC editHint(nself,gadget,id,code) OF sketchboardSettingsForm
+  self:=nself
+  self.setBusy()
+  self.sketchboardObject.editHint()
+  self.clearBusy()
+  self.updateHint(SBOARDGAD_HINT, self.sketchboardObject.hintText)
+ENDPROC
+
 PROC editSettings(comp:PTR TO sketchboardObject) OF sketchboardSettingsForm
   DEF res
 
@@ -259,6 +294,8 @@ PROC editSettings(comp:PTR TO sketchboardObject) OF sketchboardSettingsForm
 
   self.tmpPen:=comp.pen
 
+  self.updateHint(SBOARDGAD_HINT, comp.hintText) 
+  SetGadgetAttrsA(self.gadgetList[ SBOARDGAD_IDENT ],0,0,[STRINGA_TEXTVAL,comp.ident,0])
   SetGadgetAttrsA(self.gadgetList[ SBOARDGAD_WIDTH ],0,0,[INTEGER_NUMBER,comp.width,0]) 
   SetGadgetAttrsA(self.gadgetList[ SBOARDGAD_HEIGHT ],0,0,[INTEGER_NUMBER,comp.height,0]) 
   SetGadgetAttrsA(self.gadgetList[ SBOARDGAD_ACTIVETOOL ],0,0,[CHOOSER_SELECTED,comp.activeTool,0]) 
@@ -271,6 +308,7 @@ PROC editSettings(comp:PTR TO sketchboardObject) OF sketchboardSettingsForm
   res:=self.showModal()
   IF res=MR_OK
     comp.pen:=self.tmpPen
+    AstrCopy(comp.ident,Gets(self.gadgetList[ SBOARDGAD_IDENT ],STRINGA_TEXTVAL))
     comp.width:=Gets(self.gadgetList[ SBOARDGAD_WIDTH ],INTEGER_NUMBER)   
     comp.height:=Gets(self.gadgetList[ SBOARDGAD_HEIGHT ],INTEGER_NUMBER)   
     comp.activeTool:=Gets(self.gadgetList[ SBOARDGAD_ACTIVETOOL ],CHOOSER_SELECTED)   
@@ -286,6 +324,7 @@ EXPORT PROC createPreviewObject(scr) OF sketchboardObject
   self.previewObject:=0
   IF (sketchboardbase)
     self.previewObject:=NewObjectA( SketchBoard_GetClass(), NIL,[TAG_IGNORE,0,
+        GA_ID, self.id,
         GA_READONLY, self.readOnly,
         GA_DISABLED, self.disabled,
         SGA_WIDTH, self.width,

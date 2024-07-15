@@ -19,7 +19,7 @@ OPT MODULE, OSVERSION=37,LARGE
         'intuition/gadgetclass',
         'exec'
 
-  MODULE '*reactionObject','*reactionForm','*sourceGen','*stringlist','*dialogs'
+  MODULE '*reactionObject','*reactionForm','*sourceGen','*stringlist','*validator'
 
 EXPORT ENUM WINGAD_IDENT, WINGAD_TITLE, WINGAD_SCREENTITLE, WINGAD_ICONTITLE, WINGAD_ICONFILE,
       WINGAD_LEFTEDGE, WINGAD_TOPEDGE, WINGAD_WIDTH, WINGAD_HEIGHT,
@@ -77,6 +77,7 @@ EXPORT OBJECT windowObject OF reactionObject
   previewRootLayout:LONG
   previewLeft:INT
   previewTop:INT
+  previewHintInfo:PTR TO hintinfo
 ENDOBJECT
 
 OBJECT windowSettingsForm OF reactionForm
@@ -743,7 +744,7 @@ PROC create() OF windowSettingsForm
             STRINGA_MAXCHARS, 80,
           StringEnd,
           CHILD_LABEL, LabelObject,
-            LABEL_TEXT, '_Window Identifier',
+            LABEL_TEXT, 'Identifier',
           LabelEnd,
 
           LAYOUT_ADDCHILD, self.gadgetList[ WINGAD_TITLE ]:=StringObject,
@@ -960,7 +961,7 @@ PROC create() OF windowSettingsForm
             GA_ID, WINGAD_GADGETHELP,
             GA_RELVERIFY, TRUE,
             GA_TABCYCLE, TRUE,
-            GA_TEXT, 'Lock Gadget Help',
+            GA_TEXT, 'Gadget Help',
             CHECKBOX_TEXTPLACE, PLACETEXT_LEFT,
           CheckBoxEnd,
 
@@ -1008,17 +1009,11 @@ PROC create() OF windowSettingsForm
 ENDPROC
 
 EXPORT PROC canClose(modalRes) OF windowSettingsForm
-  DEF str:PTR TO CHAR
-  DEF i
   IF modalRes=MR_CANCEL THEN RETURN TRUE
   
-  str:=Gets(self.gadgetList[ WINGAD_IDENT ],STRINGA_TEXTVAL)
-  FOR i:=0 TO StrLen(str)-1
-    IF (str[i]==["_","a" TO "z","A" TO "Z","0" TO "9"])=FALSE
-      errorRequest(self.windowObj,'Error','The window identifer is not valid (A-Z, 0-9 and _)')
-      RETURN FALSE
-    ENDIF
-  ENDFOR
+  IF checkIdent(self,self.windowObject,WINGAD_IDENT)=FALSE
+    RETURN FALSE
+  ENDIF
 ENDPROC TRUE
 
 PROC editFlags(nself,gadget,id,code) OF windowSettingsForm
@@ -1113,15 +1108,6 @@ PROC editSettings(comp:PTR TO windowObject) OF windowSettingsForm
 ENDPROC res=MR_OK
 
 EXPORT PROC createPreviewObject(scr) OF windowObject
-/*  self.windowPos:=0
-  self.lockWidth:=0
-  self.lockHeight:=0
-  self.sharedPort:=0
-  self.iconifyGadget:=0
-  self.gadgetHelp:=0
-  self.refreshType:=0
-  self.flags:=WFLG_CLOSEGADGET OR WFLG_DEPTHGADGET OR WFLG_SIZEGADGET OR WFLG_DRAGBAR
-  self.idcmp:=IDCMP_GADGETDOWN OR IDCMP_GADGETUP OR IDCMP_CLOSEWINDOW*/
   IF self.previewObject THEN DisposeObject(self.previewObject)
   
   self.previewObject:=WindowObject,
@@ -1139,6 +1125,8 @@ EXPORT PROC createPreviewObject(scr) OF windowObject
     WA_ACTIVATE, FALSE,
     WA_NEWLOOKMENUS, TRUE,
     WINDOW_APPPORT, self.appPort,
+    WINDOW_HINTINFO,self.previewHintInfo,
+    WINDOW_GADGETHELP,self.gadgetHelp,
     WINDOW_ICONIFYGADGET, IF self.iconifyGadget THEN TRUE ELSE FALSE,
     IF self.windowPos THEN WINDOW_POSITION ELSE TAG_IGNORE, ListItem([WPOS_TOPLEFT,WPOS_CENTERSCREEN,WPOS_CENTERMOUSE,WPOS_TOPLEFT,WPOS_CENTERWINDOW,WPOS_FULLSCREEN,0],self.windowPos),
     WA_CLOSEGADGET,IF self.flags AND WFLG_CLOSEGADGET THEN TRUE ELSE FALSE,
@@ -1181,10 +1169,14 @@ EXPORT PROC create(parent) OF windowObject
   self.lockHeight:=0
   self.sharedPort:=0
   self.iconifyGadget:=0
-  self.gadgetHelp:=0
+  self.gadgetHelp:=TRUE
   self.refreshType:=0
-  self.flags:=WFLG_CLOSEGADGET OR WFLG_DEPTHGADGET OR WFLG_SIZEGADGET OR WFLG_DRAGBAR
+  self.flags:=WFLG_CLOSEGADGET OR WFLG_DEPTHGADGET OR WFLG_SIZEGADGET OR WFLG_DRAGBAR OR WFLG_ACTIVATE
   self.idcmp:=IDCMP_GADGETDOWN OR IDCMP_GADGETUP OR IDCMP_CLOSEWINDOW
+
+  self.previewHintInfo:=New(SIZEOF hintinfo) 
+  self.previewHintInfo.gadgetid:=-1
+  self.previewHintInfo.code:=-1
   
   self.appPort:=CreateMsgPort()
   self.previewObject:=0
@@ -1197,6 +1189,7 @@ ENDPROC
 
 PROC end() OF windowObject
   IF self.appPort THEN DeleteMsgPort(self.appPort)
+  IF self.previewHintInfo THEN Dispose(self.previewHintInfo)
   SUPER self.end()
 ENDPROC
 
@@ -1265,7 +1258,10 @@ EXPORT PROC genCodeProperties(srcGen:PTR TO srcGen) OF windowObject
   IF self.lockWidth THEN srcGen.componentProperty('WINDOW_LockWidth','TRUE',FALSE)
   IF self.lockHeight THEN srcGen.componentProperty('WINDOW_LockHeight','TRUE',FALSE)
   IF self.iconifyGadget THEN srcGen.componentProperty('WINDOW_IconifyGadget','TRUE',FALSE)
-  IF self.gadgetHelp THEN srcGen.componentProperty('WINDOW_GadgetHelp','TRUE',FALSE)
+  IF self.gadgetHelp 
+    srcGen.componentProperty('WINDOW_HintInfo','hintInfo',FALSE)
+    srcGen.componentProperty('WINDOW_GadgetHelp','TRUE',FALSE)
+  ENDIF
   IF self.sharedPort
     srcGen.componentProperty('WINDOW_SharedPort','gSharedPort',FALSE)
   ENDIF
