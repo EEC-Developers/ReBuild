@@ -20,7 +20,7 @@ OPT MODULE, OSVERSION=37
         'intuition/gadgetclass',
         'exec/lists','exec/nodes'
 
-  MODULE '*reactionObject','*reactionForm','*stringlist','*fileStreamer','*dialogs'
+  MODULE '*reactionObject','*reactionForm','*stringlist','*baseStreamer','*dialogs'
 
 EXPORT ENUM MENUGAD_ITEMLIST, MENUGAD_ITEM_NAME, MENUGAD_ITEM_COMMKEY, MENUGAD_ITEM_TYPE, MENUGAD_ITEM_MENUBAR,
       MENUGAD_ITEM_CHECK, MENUGAD_ITEM_TOGGLE, MENUGAD_ITEM_CHECKED, MENUGAD_ITEM_DISABLED, MENUGAD_ITEM_MUTUALGROUP, 
@@ -320,7 +320,7 @@ ENDPROC
 PROC findNode(n) OF menuSettingsForm
   DEF node:PTR TO ln
   node:=self.browserlist.head
-  WHILE (node)
+  WHILE (node.succ)
     IF n=0 THEN RETURN node
     n--
     node:=node.succ
@@ -577,8 +577,8 @@ PROC end() OF menuSettingsForm
   END self.gadgetList[NUM_MENU_GADS]
   END self.gadgetActions[NUM_MENU_GADS]
   freeChooserLabels( self.labels1 ) 
+  DisposeObject(self.windowObj)
 ENDPROC
-
 
 PROC validate(nself,gadget,id,code) OF menuSettingsForm
   DEF win,menuItem:PTR TO menuItem
@@ -790,7 +790,7 @@ EXPORT PROC editSettings() OF menuObject
   END editForm
 ENDPROC res
 
-EXPORT PROC serialise(fser:PTR TO fileStreamer) OF menuObject
+EXPORT PROC serialise(fser:PTR TO baseStreamer) OF menuObject
   DEF tempStr[200]:STRING
   DEF menuItem:PTR TO menuItem
   DEF i
@@ -822,7 +822,7 @@ EXPORT PROC serialise(fser:PTR TO fileStreamer) OF menuObject
   self.serialiseChildren(fser)
 ENDPROC
 
-EXPORT PROC deserialise(fser:PTR TO fileStreamer) OF menuObject
+EXPORT PROC deserialise(fser:PTR TO baseStreamer) OF menuObject
   DEF tempStr[200]:STRING
   DEF done=FALSE
   DEF i

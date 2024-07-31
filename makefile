@@ -15,7 +15,7 @@ all:					rebuild
 release:				options=$(releaseoptions)
 release:				rebuild
 
-rebuild:			rebuild.e validator.m dialogs.m libraryVersions.m reactionLists.m tabsObject.m sketchboardObject.m virtualObject.m listViewObject.m ledObject.m textEditorObject.m tapeDeckObject.m gradSliderObject.m getColorObject.m dateBrowserObject.m colorWheelObject.m speedBarObject.m sliderObject.m bitmapObject.m penMapObject.m boingBallObject.m getScreenModeObject.m getFontObject.m getFileObject.m textFieldObject.m drawListObject.m fuelGaugeObject.m bevelObject.m listBrowserObject.m clickTabObject.m chooserObject.m radioObject.m menuObject.m rexxObject.m reactionListObject.m listManagerForm.m codeGenForm.m eSourceGen.m cSourceGen.m sourcegen.m fileStreamer.m reactionForm.m objectPicker.m windowObject.m screenObject.m paletteObject.m scrollerObject.m glyphObject.m spaceObject.m integerObject.m labelObject.m checkboxObject.m stringObject.m buttonObject.m layoutObject.m reactionObject.m stringlist.m requesterObject.m
+rebuild:			rebuild.e codePreviewForm.m validator.m dialogs.m libraryVersions.m reactionLists.m tabsObject.m sketchboardObject.m virtualObject.m listViewObject.m ledObject.m textEditorObject.m tapeDeckObject.m gradSliderObject.m getColorObject.m dateBrowserObject.m colorWheelObject.m speedBarObject.m sliderObject.m bitmapObject.m penMapObject.m boingBallObject.m getScreenModeObject.m getFontObject.m getFileObject.m textFieldObject.m drawListObject.m fuelGaugeObject.m bevelObject.m listBrowserObject.m clickTabObject.m chooserObject.m radioObject.m menuObject.m rexxObject.m reactionListObject.m listManagerForm.m codeGenForm.m eSourceGen.m cSourceGen.m sourcegen.m fileStreamer.m stringStreamer.m baseStreamer.m reactionForm.m objectPicker.m windowObject.m screenObject.m paletteObject.m scrollerObject.m glyphObject.m spaceObject.m integerObject.m labelObject.m checkboxObject.m stringObject.m buttonObject.m layoutObject.m reactionObject.m stringlist.m requesterObject.m requesterItemObject.m
 							$(compiler) rebuild $(options)
 
 reactionLists.m:			reactionLists.e stringlist.m
@@ -45,7 +45,7 @@ bitmapObject.m:			bitmapObject.e reactionObject.m reactionForm.m sourceGen.m val
 penMapObject.m:			penMapObject.e reactionObject.m reactionForm.m sourceGen.m colourPicker.m validator.m
 							$(compiler) penMapObject $(options)
 
-sliderObject.m:			sliderObject.e reactionObject.m reactionForm.m sourceGen.m validator.m
+sliderObject.m:			sliderObject.e reactionObject.m reactionForm.m sourceGen.m validator.m integerObject.m stringlist.m
 							$(compiler) sliderObject $(options)
 
 spaceObject.m:			spaceObject.e reactionObject.m reactionForm.m
@@ -60,7 +60,7 @@ virtualObject.m:			virtualObject.e reactionObject.m reactionForm.m sourceGen.m v
 sketchboardObject.m:			sketchboardObject.e reactionObject.m reactionForm.m sourceGen.m colourPicker.m validator.m
 							$(compiler) sketchboardObject $(options)
 
-textEditorObject.m:			textEditorObject.e reactionObject.m reactionForm.m sourceGen.m validator.m
+textEditorObject.m:			textEditorObject.e reactionObject.m reactionForm.m sourceGen.m validator.m stringlist.m stringlist.m
 							$(compiler) textEditorObject $(options)
 
 ledObject.m:			ledObject.e reactionObject.m reactionForm.m sourceGen.m colourPicker.m validator.m
@@ -75,13 +75,13 @@ getColorObject.m:			getColorObject.e reactionObject.m reactionForm.m sourceGen.m
 dateBrowserObject.m:			dateBrowserObject.e reactionObject.m reactionForm.m sourceGen.m validator.m
 							$(compiler) dateBrowserObject $(options)
 
-eSourceGen.m:			eSourceGen.e fileStreamer.m sourceGen.m reactionObject.m stringlist.m menuObject.m windowObject.m reactionListObject.m chooserObject.m clickTabObject.m radioObject.m listBrowserObject.m drawListObject.m screenObject.m rexxObject.m speedBarObject.m listViewObject.m tabsObject.m windowObject.m requesterObject.m
+eSourceGen.m:			eSourceGen.e baseStreamer.m sourceGen.m reactionObject.m stringlist.m menuObject.m windowObject.m reactionListObject.m chooserObject.m clickTabObject.m radioObject.m listBrowserObject.m drawListObject.m screenObject.m rexxObject.m speedBarObject.m listViewObject.m tabsObject.m windowObject.m requesterObject.m requesterItemObject.m
 							$(compiler) eSourceGen $(options)
 
-cSourceGen.m:			cSourceGen.e fileStreamer.m sourceGen.m reactionObject.m stringlist.m menuObject.m windowObject.m reactionListObject.m chooserObject.m clickTabObject.m radioObject.m listBrowserObject.m drawListObject.m speedBarObject.m rexxObject.m screenObject.m listViewObject.m tabsObject.m windowObject.m requesterObject.m
+cSourceGen.m:			cSourceGen.e baseStreamer.m sourceGen.m reactionObject.m stringlist.m menuObject.m windowObject.m reactionListObject.m chooserObject.m clickTabObject.m radioObject.m listBrowserObject.m drawListObject.m speedBarObject.m rexxObject.m screenObject.m listViewObject.m tabsObject.m windowObject.m requesterObject.m requesterItemObject.m
 							$(compiler) cSourceGen $(options)
 
-sourceGen.m:			sourceGen.e fileStreamer.m stringlist.m
+sourceGen.m:			sourceGen.e baseStreamer.m stringlist.m
 							$(compiler) sourceGen $(options)
 
 layoutObject.m:			layoutObject.e reactionObject.m reactionForm.m sourceGen.m validator.m
@@ -90,7 +90,7 @@ layoutObject.m:			layoutObject.e reactionObject.m reactionForm.m sourceGen.m val
 integerObject.m:			integerObject.e reactionObject.m reactionForm.m sourceGen.m validator.m
 							$(compiler) integerObject $(options)
               
-scrollerObject.m:			scrollerObject.e reactionObject.m reactionForm.m sourceGen.m validator.m
+scrollerObject.m:			scrollerObject.e reactionObject.m reactionForm.m sourceGen.m validator.m textEditorObject.m textFieldObject.m stringlist.m
 							$(compiler) scrollerObject $(options)
 
 stringObject.m:			stringObject.e reactionObject.m reactionForm.m sourceGen.m validator.m
@@ -105,10 +105,13 @@ labelObject.m:			labelObject.e reactionObject.m reactionForm.m colourPicker.m so
 rexxObject.m:			rexxObject.e reactionObject.m reactionForm.m stringlist.m
 							$(compiler) rexxObject $(options)
 
-requesterObject.m:			requesterObject.e reactionObject.m reactionForm.m stringlist.m fileStreamer.m
+requesterObject.m:			requesterObject.e reactionObject.m reactionForm.m stringlist.m baseStreamer.m validator.m requesterItemObject.m
 							$(compiler) requesterObject $(options)
 
-menuObject.m:			menuObject.e reactionObject.m reactionForm.m stringlist.m fileStreamer.m dialogs.m
+requesterItemObject.m:			requesterItemObject.e reactionObject.m reactionForm.m stringlist.m baseStreamer.m validator.m
+							$(compiler) requesterItemObject $(options)
+
+menuObject.m:			menuObject.e reactionObject.m reactionForm.m stringlist.m baseStreamer.m dialogs.m
 							$(compiler) menuObject $(options)
 
 buttonObject.m:			buttonObject.e reactionObject.m reactionForm.m colourPicker.m sourceGen.m validator.m
@@ -129,13 +132,13 @@ libraryVersions.m:			libraryVersions.e reactionForm.m
 bevelObject.m:			bevelObject.e reactionObject.m reactionForm.m colourPicker.m sourceGen.m validator.m
 							$(compiler) bevelObject $(options)
 
-textFieldObject.m:			textFieldObject.e reactionObject.m reactionForm.m colourPicker.m sourceGen.m validator.m
+textFieldObject.m:			textFieldObject.e reactionObject.m reactionForm.m colourPicker.m sourceGen.m validator.m  stringlist.m
 							$(compiler) textFieldObject $(options)
 
 tabsObject.m:			tabsObject.e reactionObject.m reactionForm.m sourceGen.m stringlist.m listPicker.m reactionLists.m reactionListObject.m validator.m
 							$(compiler) tabsObject $(options)
               
-drawListObject.m:			drawListObject.e reactionObject.m reactionForm.m colourPicker.m sourceGen.m fileStreamer.m stringlist.m validator.m
+drawListObject.m:			drawListObject.e reactionObject.m reactionForm.m colourPicker.m sourceGen.m baseStreamer.m stringlist.m validator.m
 							$(compiler) drawListObject $(options)
 
 fuelGaugeObject.m:			fuelGaugeObject.e reactionObject.m reactionForm.m colourPicker.m sourceGen.m validator.m
@@ -162,11 +165,20 @@ listBrowserObject.m:			listBrowserObject.e reactionObject.m reactionForm.m listP
 clickTabObject.m:			clickTabObject.e reactionObject.m reactionForm.m listPicker.m stringlist.m reactionLists.m sourceGen.m reactionListObject.m sourceGen.m validator.m
 							$(compiler) clickTabObject $(options)
               
-reactionListObject.m:			reactionListObject.e stringlist.m reactionObject.m fileStreamer.m
+reactionListObject.m:			reactionListObject.e stringlist.m reactionObject.m baseStreamer.m
 							$(compiler) reactionListObject $(options)
 
-fileStreamer.m:			fileStreamer.e 
+fileStreamer.m:			fileStreamer.e baseStreamer.m
 							$(compiler) fileStreamer $(options)
+              
+stringStreamer.m:			stringStreamer.e baseStreamer.m stringlist.m
+							$(compiler) stringStreamer $(options)           
+
+codePreviewForm.m:		codePreviewForm.e reactionForm.m stringStreamer.m
+							$(compiler) codePreviewForm $(options)           
+
+baseStreamer.m:			baseStreamer.e 
+							$(compiler) baseStreamer $(options)
 
 dialogs.m:			dialogs.e 
 							$(compiler) dialogs $(options)
@@ -196,4 +208,4 @@ validator.m:			validator.e reactionObject.m reactionForm.m stringlist.m dialogs.
 							$(compiler) validator $(options)
 
 clean:
-							delete validator.m bitmapObject.m dialogs.m libraryVersions.m tabsObject.m sketchboardObject.m virtualObject.m listViewObject.m ledObject.m textEditorObject.m tapeDeckObject.m gradSliderObject.m getColorObject.m dateBrowserObject.m colorWheelObject.m speedBarObject.m sliderObject.m penMapObject.m boingBallObject.m getScreenModeObject.m getFontObject.m getFileObject.m textFieldObject.m fuelGaugeObject.m drawListObject.m bevelObject.m listBrowserObject.m clickTabObject.m chooserObject.m radioObject.m menuObject.m rexxObject.m reactionListObject.m listPicker.m reactionForm.m listManagerForm.m codeGenForm.m cSourcegen.m eSourceGen.m sourceGen.m objectPicker.m colourPicker.m fileStreamer.m windowObject.m screenObject.m paletteObject.m scrollerObject.m glyphObject.m spaceObject.m integerObject.m labelObject.m checkboxObject.m stringObject.m buttonObject.m layoutObject.m reactionObject.m reactionLists.m stringlist.m requesterObject.m rebuild
+							delete codePreviewForm.m validator.m bitmapObject.m dialogs.m libraryVersions.m tabsObject.m sketchboardObject.m virtualObject.m listViewObject.m ledObject.m textEditorObject.m tapeDeckObject.m gradSliderObject.m getColorObject.m dateBrowserObject.m colorWheelObject.m speedBarObject.m sliderObject.m penMapObject.m boingBallObject.m getScreenModeObject.m getFontObject.m getFileObject.m textFieldObject.m fuelGaugeObject.m drawListObject.m bevelObject.m listBrowserObject.m clickTabObject.m chooserObject.m radioObject.m menuObject.m rexxObject.m reactionListObject.m listPicker.m reactionForm.m listManagerForm.m codeGenForm.m cSourcegen.m eSourceGen.m sourceGen.m objectPicker.m colourPicker.m baseStreamer.m fileStreamer.m stringStreamer.m windowObject.m screenObject.m paletteObject.m scrollerObject.m glyphObject.m spaceObject.m integerObject.m labelObject.m checkboxObject.m stringObject.m buttonObject.m layoutObject.m reactionObject.m reactionLists.m stringlist.m requesterObject.m rebuild

@@ -9,6 +9,7 @@ OPT MODULE,OSVERSION=37
         'gadgets/integer','integer',
         'gadgets/checkbox','checkbox',
         'gadgets/textEditor','texteditor',
+        '*textfield',
         'images/label','label',
         'amigalib/boopsi',
         'gadtools',
@@ -20,6 +21,12 @@ OPT MODULE,OSVERSION=37
         'intuition/gadgetclass'
 
   MODULE '*stringlist','*reactionForm','*fileStreamer','*sourceGen'
+
+CONST TEXTFIELD_TEXT=$84000001
+CONST TEXTFIELD_BORDER_BEVEL=1
+CONST TEXTFIELD_BORDER=$8400000C
+CONST TEXTFIELD_SIZE=$84000007
+CONST TEXTFIELD_READONLY=$8400001F
 
 EXPORT DEF texteditorbase
 
@@ -37,6 +44,7 @@ EXPORT ENUM TYPE_REACTIONLIST,TYPE_SCREEN,TYPE_REXX, TYPE_WINDOW, TYPE_MENU,
             TYPE_LISTVIEW, TYPE_PAGE, TYPE_PROGRESS, TYPE_SKETCH,TYPE_TAPEDECK,
             TYPE_TEXTEDITOR, TYPE_TEXTENTRY, TYPE_VIRTUAL, TYPE_BOINGBALL, TYPE_LED,
             TYPE_PENMAP, TYPE_SMARTBITMAP, TYPE_TITLEBAR, TYPE_TABS, TYPE_REQUESTER,
+            TYPE_REQUESTER_ITEM,
             
             TYPE_MAX
             
@@ -61,6 +69,7 @@ EXPORT DEF imageData:PTR TO CHAR
 EXPORT OBJECT reactionObject
   ident[80]:ARRAY OF CHAR
   name[80]:ARRAY OF CHAR
+  label[80]:ARRAY OF CHAR
   hintText:PTR TO stringlist
   parent:PTR TO reactionObject
   children:PTR TO stdlist
@@ -81,6 +90,7 @@ EXPORT OBJECT reactionObject
   noDispose:CHAR
   weightBar:CHAR
   
+  expanded:CHAR
   tempParentId:INT
   drawInfo:LONG
   visInfo:LONG
@@ -322,6 +332,7 @@ ENDPROC
 PROC end() OF childSettingsForm
   END self.gadgetList[NUM_CHI_GADS]
   END self.gadgetActions[NUM_CHI_GADS]
+  DisposeObject(self.windowObj)
 ENDPROC
 
 PROC editSettings(comp:PTR TO reactionObject) OF childSettingsForm
@@ -362,17 +373,34 @@ ENDPROC res=MR_OK
 
 PROC create() OF hintEditForm
   DEF gads:PTR TO LONG
-  DEF tempbase
+  DEF tempbase=0
 
   NEW gads[NUM_HINT_GADS]
   self.gadgetList:=gads
   NEW gads[NUM_HINT_GADS]
-
-  tempbase:=textfieldbase
-  textfieldbase:=texteditorbase
-
   self.gadgetActions:=gads
-    self.windowObj:=WindowObject,
+
+  IF texteditorbase
+    tempbase:=textfieldbase
+    textfieldbase:=texteditorbase
+
+    self.gadgetList[ HINTGAD_TEXT ]:=NewObjectA( TextEditor_GetClass(), NIL,[
+        GA_ID, HINTGAD_TEXT,
+        GA_RELVERIFY, TRUE,
+        GA_TABCYCLE, TRUE,
+        GA_READONLY, FALSE,
+      TAG_END])
+  ELSE
+    self.gadgetList[ HINTGAD_TEXT ]:=NewObjectA( TextField_GetClass(), NIL,[
+        GA_ID, HINTGAD_TEXT,
+        GA_RELVERIFY, TRUE,
+        GA_TABCYCLE, TRUE,
+        GA_READONLY, FALSE,
+        TEXTFIELD_BORDER, TEXTFIELD_BORDER_BEVEL,
+      TAG_END])
+  ENDIF
+
+  self.windowObj:=WindowObject,
     WA_TITLE, 'Hint Text Editor',
     WA_LEFT, 0,
     WA_TOP, 0,
@@ -398,12 +426,7 @@ PROC create() OF hintEditForm
     LAYOUT_SPACEOUTER, TRUE,
     LAYOUT_DEFERLAYOUT, TRUE,
 
-      LAYOUT_ADDCHILD, self.gadgetList[ HINTGAD_TEXT ]:=NewObjectA( TextEditor_GetClass(), NIL,[
-        GA_ID, HINTGAD_TEXT,
-        GA_RELVERIFY, TRUE,
-        GA_TABCYCLE, TRUE,
-        GA_READONLY, FALSE,
-      TAG_END]),
+      LAYOUT_ADDCHILD, self.gadgetList[ HINTGAD_TEXT ],
 
       LAYOUT_ADDCHILD, LayoutObject,
         LAYOUT_ORIENTATION, LAYOUT_ORIENT_HORIZ,
@@ -422,10 +445,11 @@ PROC create() OF hintEditForm
           GA_TABCYCLE, TRUE,
         ButtonEnd,
       LayoutEnd,
+      CHILD_WEIGHTEDHEIGHT,0,
     LayoutEnd,
   WindowEnd
 
-  textfieldbase:=tempbase
+  IF tempbase THEN textfieldbase:=tempbase
 
   self.gadgetActions[HINTGAD_CANCEL]:=MR_CANCEL
   self.gadgetActions[HINTGAD_OK]:=MR_OK
@@ -434,18 +458,35 @@ ENDPROC
 PROC end() OF hintEditForm
   END self.gadgetList[NUM_HINT_GADS]
   END self.gadgetActions[NUM_HINT_GADS]
+  DisposeObject(self.windowObj)
 ENDPROC
 
 PROC editHint(comp:PTR TO reactionObject) OF hintEditForm
-  DEF res,newval
+  DEF res,newval,strval,vallen
 
   newval:=comp.hintText.makeTextString()
-  SetGadgetAttrsA(self.gadgetList[ HINTGAD_TEXT ],0,0,[GA_TEXTEDITOR_CONTENTS,newval,0])
-  Dispose(newval)
+  IF texteditorbase
+    SetGadgetAttrsA(self.gadgetList[ HINTGAD_TEXT ],0,0,[GA_TEXTEDITOR_CONTENTS,newval,0])
+  ELSE
+    SetGadgetAttrsA(self.gadgetList[ HINTGAD_TEXT ],0,0,[TEXTFIELD_TEXT,newval,0])
+  ENDIF
+  DisposeLink(newval)
 
   res:=self.showModal()
   IF res=MR_OK
-    newval:=DoMethod(self.gadgetList[ HINTGAD_TEXT ], GM_TEXTEDITOR_EXPORTTEXT);
+    IF texteditorbase
+      newval:=DoMethod(self.gadgetList[ HINTGAD_TEXT ], GM_TEXTEDITOR_EXPORTTEXT);
+    ELSE
+      SetGadgetAttrsA(self.gadgetList[ HINTGAD_TEXT ],0,0,[TEXTFIELD_READONLY,TRUE,0])
+      vallen:=Gets(self.gadgetList[ HINTGAD_TEXT ], TEXTFIELD_SIZE)
+      strval:=Gets(self.gadgetList[ HINTGAD_TEXT ], TEXTFIELD_TEXT)
+      newval:=AllocVec(vallen+1,0)
+      IF (vallen<>0) AND (strval<>0)
+        CopyMem(strval,newval,vallen)
+      ENDIF
+      newval[vallen]:=0
+      SetGadgetAttrsA(self.gadgetList[ HINTGAD_TEXT ],0,0,[TEXTFIELD_READONLY,FALSE,0])
+    ENDIF
     comp.hintText.setFromTextString(newval)
     FreeVec(newval)
   ENDIF
@@ -457,12 +498,12 @@ EXPORT PROC create(parent) OF reactionObject
   DEF strlist:PTR TO stringlist
   DEF scr
   self.parent:=parent
-  self.id:=objCount
+  self.id:=getObjId()
   self.errObj:=FALSE
-  objCount:=objCount+1
   StringF(name,'\s_\d',self.getTypeName(),self.id)
   AstrCopy(self.name,name)
   AstrCopy(self.ident,name)
+  AstrCopy(self.label,'')
   
   NEW strlist.stringlist(10)
   self.hintText:=strlist
@@ -491,6 +532,7 @@ EXPORT PROC create(parent) OF reactionObject
   scr:=LockPubScreen(NIL)
   self.drawInfo:=GetScreenDrawInfo(scr)
   self.visInfo:=GetVisualInfoA(scr,[TAG_END])
+  self.expanded:=self.allowChildren()<>0
   UnlockPubScreen(NIL,scr)
 ENDPROC
 
@@ -513,6 +555,8 @@ EXPORT PROC end() OF reactionObject
     ENDPROC
 
 EXPORT PROC createPreviewObject(scr) OF reactionObject IS -1
+
+EXPORT PROC updatePreviewObject() OF reactionObject IS -1
 
 EXPORT PROC getTypeName() OF reactionObject
   RETURN ''
@@ -604,6 +648,8 @@ EXPORT PROC serialise(fser:PTR TO fileStreamer) OF reactionObject
   fser.writeLine(tempStr)
   StringF(tempStr,'IDENT: \s',self.ident)
   fser.writeLine(tempStr)
+  StringF(tempStr,'LABEL: \s',self.label)
+  fser.writeLine(tempStr)
   FOR i:=0 TO self.hintText.count()-1
     StringF(tempStr,'HINT: \s',self.hintText.item(i))
     fser.writeLine(tempStr)
@@ -633,6 +679,8 @@ EXPORT PROC serialise(fser:PTR TO fileStreamer) OF reactionObject
   StringF(tempStr,'NODISPOSE: \d',self.noDispose)
   fser.writeLine(tempStr)
   StringF(tempStr,'WEIGHTBAR: \d',self.weightBar)
+  fser.writeLine(tempStr)
+  StringF(tempStr,'EXPANDED: \d',self.expanded)
   fser.writeLine(tempStr)
   fser.writeLine('--')
   
@@ -678,9 +726,9 @@ EXPORT PROC serialise(fser:PTR TO fileStreamer) OF reactionObject
         ENDIF
       ENDIF
     ENDWHILE
-    fser.writeLine('-')
-    self.serialiseChildren(fser)
   ENDIF 
+  fser.writeLine('-')
+  self.serialiseChildren(fser)
 ENDPROC
 
 PROC deserialise(fser:PTR TO fileStreamer) OF reactionObject
@@ -710,6 +758,8 @@ PROC deserialise(fser:PTR TO fileStreamer) OF reactionObject
         AstrCopy(self.name,tempStr+STRLEN,80)
       ELSEIF StrCmp('IDENT: ',tempStr,STRLEN)
         AstrCopy(self.ident,tempStr+STRLEN,80)
+      ELSEIF StrCmp('LABEL: ',tempStr,STRLEN)
+        AstrCopy(self.label,tempStr+STRLEN,80)
       ELSEIF StrCmp('MINWIDTH: ',tempStr,STRLEN)
         self.minWidth:=Val(tempStr+STRLEN)
       ELSEIF StrCmp('MINHEIGHT: ',tempStr,STRLEN)
@@ -736,6 +786,8 @@ PROC deserialise(fser:PTR TO fileStreamer) OF reactionObject
         self.noDispose:=Val(tempStr+STRLEN)
       ELSEIF StrCmp('WEIGHTBAR: ',tempStr,STRLEN)
         self.weightBar:=Val(tempStr+STRLEN)
+      ELSEIF StrCmp('EXPANDED: ',tempStr,STRLEN)
+        self.expanded:=Val(tempStr+STRLEN)
       ENDIF
     ELSE
       done:=TRUE
@@ -752,46 +804,44 @@ PROC deserialise(fser:PTR TO fileStreamer) OF reactionObject
 
   list:=self.serialiseData()
   count:=ListLen(list)
-  IF count>0
-    done:=FALSE
-    REPEAT
-      IF fser.readLine(tempStr)
-        IF StrCmp('-',tempStr)
-          done:=TRUE
-        ELSE
-          i:=0
-          WHILE i<count
-            fieldname:=list[i++]
-            fieldptr:=list[i++]
-            fieldtype:=list[i++]
-            StrCopy(tempStr2,fieldname)
-            StrAdd(tempStr2,': ')
-            UpperStr(tempStr2)
-            IF StrCmp(tempStr2,tempStr,EstrLen(tempStr2))
-              SELECT fieldtype
-                CASE FIELDTYPE_CHAR
-                  PutChar(fieldptr,Val(tempStr+StrLen(tempStr2)))
-                CASE FIELDTYPE_INT
-                  PutInt(fieldptr,Val(tempStr+StrLen(tempStr2)))
-                CASE FIELDTYPE_LONG
-                  PutLong(fieldptr,Val(tempStr+StrLen(tempStr2)))
-                CASE FIELDTYPE_STR
-                  AstrCopy(fieldptr,tempStr+StrLen(tempStr2))
-                CASE FIELDTYPE_STRLIST
-                  strlist:=Long(fieldptr)
-                  strlist.add(tempStr+StrLen(tempStr2))
-                CASE FIELDTYPE_INTLIST
-                  intlist:=Long(fieldptr)
-                  intlist.add(Val(tempStr+StrLen(tempStr2)))
-              ENDSELECT
-            ENDIF
-          ENDWHILE
-        ENDIF
-      ELSE
+  done:=FALSE
+  REPEAT
+    IF fser.readLine(tempStr)
+      IF StrCmp('-',tempStr)
         done:=TRUE
+      ELSE
+        i:=0
+        WHILE i<count
+          fieldname:=list[i++]
+          fieldptr:=list[i++]
+          fieldtype:=list[i++]
+          StrCopy(tempStr2,fieldname)
+          StrAdd(tempStr2,': ')
+          UpperStr(tempStr2)
+          IF StrCmp(tempStr2,tempStr,EstrLen(tempStr2))
+            SELECT fieldtype
+              CASE FIELDTYPE_CHAR
+                PutChar(fieldptr,Val(tempStr+StrLen(tempStr2)))
+              CASE FIELDTYPE_INT
+                PutInt(fieldptr,Val(tempStr+StrLen(tempStr2)))
+              CASE FIELDTYPE_LONG
+                PutLong(fieldptr,Val(tempStr+StrLen(tempStr2)))
+              CASE FIELDTYPE_STR
+                AstrCopy(fieldptr,tempStr+StrLen(tempStr2))
+              CASE FIELDTYPE_STRLIST
+                strlist:=Long(fieldptr)
+                strlist.add(tempStr+StrLen(tempStr2))
+              CASE FIELDTYPE_INTLIST
+                intlist:=Long(fieldptr)
+                intlist.add(Val(tempStr+StrLen(tempStr2)))
+            ENDSELECT
+          ENDIF
+        ENDWHILE
       ENDIF
-    UNTIL done  
-  ENDIF
+    ELSE
+      done:=TRUE
+    ENDIF
+  UNTIL done  
 ENDPROC
 
 PROC serialiseChildren(fser:PTR TO fileStreamer) OF reactionObject
@@ -804,6 +854,21 @@ PROC serialiseChildren(fser:PTR TO fileStreamer) OF reactionObject
 ENDPROC
 
 EXPORT PROC genCodeProperties(srcGen:PTR TO srcGen) OF reactionObject IS -1
+
+EXPORT PROC genCodeMaps(header,srcGen:PTR TO srcGen) OF reactionObject IS -1
+
+EXPORT PROC genComponentMaps(header,srcGen:PTR TO srcGen)OF reactionObject
+  DEF i,child:PTR TO reactionObject
+  FOR i:=0 TO self.children.count()-1
+    child:=self.children.item(i)
+    child.genCodeMaps(header,srcGen)   
+  ENDFOR
+
+  FOR i:=0 TO self.children.count()-1
+    child:=self.children.item(i)
+    child.genComponentMaps(header,srcGen)   
+  ENDFOR
+ENDPROC
 
 EXPORT PROC genCodeChildProperties(srcGen:PTR TO srcGen) OF reactionObject
   IF self.minWidth<>-1 THEN srcGen.componentPropertyInt('CHILD_MinWidth',self.minWidth)
@@ -868,6 +933,61 @@ EXPORT PROC deinitialise()
   IF imageData THEN Dispose(imageData)
 ENDPROC
 
+EXPORT PROC findReactionObject(id) OF reactionObject
+  DEF i,res
+  
+  FOR i:=0 TO self.children.count()-1
+    IF self.children.item(i)::reactionObject.id = id THEN RETURN self.children.item(i)
+  ENDFOR
+
+  FOR i:=0 TO self.children.count()-1
+    IF res:=self.children.item(i)::reactionObject.findReactionObject(id) THEN RETURN res
+  ENDFOR
+ENDPROC 0
+
+EXPORT PROC makePreviewChildAttrs(label)  OF reactionObject
+  IF label=0 THEN label:=self.label
+  IF label=-1 THEN label:=''
+  IF StrLen(label)>0
+    self.previewChildAttrs:=[
+      LAYOUT_MODIFYCHILD, self.previewObject,
+          CHILD_LABEL, LabelObject,
+            LABEL_TEXT, label,
+          LabelEnd,
+      CHILD_NOMINALSIZE, self.nominalSize,
+      CHILD_NODISPOSE, FALSE,
+      CHILD_MINWIDTH, self.minWidth,
+      CHILD_MINHEIGHT, self.minHeight,
+      CHILD_MAXWIDTH, self.maxWidth,
+      CHILD_MAXHEIGHT, self.maxHeight,
+      CHILD_WEIGHTEDWIDTH, self.weightedWidth,
+      CHILD_WEIGHTEDHEIGHT,self.weightedHeight,
+      CHILD_SCALEWIDTH, self.scaleWidth,
+      CHILD_SCALEHEIGHT, self.scaleHeight,
+      CHILD_NOMINALSIZE, self.nominalSize,
+      CHILD_WEIGHTMINIMUM, self.weightMinimum,
+      IF self.weightBar THEN LAYOUT_WEIGHTBAR ELSE TAG_IGNORE, 1,
+      TAG_END]
+  ELSE
+    self.previewChildAttrs:=[
+      LAYOUT_MODIFYCHILD, self.previewObject,
+      CHILD_NOMINALSIZE, self.nominalSize,
+      CHILD_NODISPOSE, FALSE,
+      CHILD_MINWIDTH, self.minWidth,
+      CHILD_MINHEIGHT, self.minHeight,
+      CHILD_MAXWIDTH, self.maxWidth,
+      CHILD_MAXHEIGHT, self.maxHeight,
+      CHILD_WEIGHTEDWIDTH, self.weightedWidth,
+      CHILD_WEIGHTEDHEIGHT,self.weightedHeight,
+      CHILD_SCALEWIDTH, self.scaleWidth,
+      CHILD_SCALEHEIGHT, self.scaleHeight,
+      CHILD_NOMINALSIZE, self.nominalSize,
+      CHILD_WEIGHTMINIMUM, self.weightMinimum,
+      IF self.weightBar THEN LAYOUT_WEIGHTBAR ELSE TAG_IGNORE, 1,
+      TAG_END]
+  ENDIF
+ENDPROC
+
 PROC findObjectsByType(res:PTR TO stdlist,type) OF reactionObject
   DEF i
   DEF child:PTR TO reactionObject
@@ -888,4 +1008,8 @@ ENDPROC NewObjectA(PenMap_GetClass(),NIL,
                                   PENMAP_PALETTE,[2,-1,-1,-1,0,0,0]:LONG,
                                   TAG_DONE])
 
-EXPORT PROC getObjId() IS objCount
+EXPORT PROC currObjId() IS objCount
+
+EXPORT PROC getObjId()
+  objCount:=objCount+1
+ENDPROC objCount-1

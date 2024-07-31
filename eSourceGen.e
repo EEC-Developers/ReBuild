@@ -1,17 +1,16 @@
 OPT MODULE,LARGE
-OPT MODULE,LARGE
 
   MODULE 'images/drawlist','gadgets/tabs'
-  MODULE '*fileStreamer','*sourceGen','*reactionObject','*menuObject','*windowObject','*stringlist','*screenObject'
+  MODULE '*baseStreamer','*sourceGen','*reactionObject','*menuObject','*windowObject','*stringlist','*screenObject'
   MODULE '*chooserObject','*clickTabObject','*radioObject','*listBrowserObject','*rexxObject','*tabsObject',
-         '*reactionListObject','*reactionLists','*drawlistObject','*speedBarObject','*listViewObject','*requesterObject'
+         '*reactionListObject','*reactionLists','*drawlistObject','*speedBarObject','*listViewObject','*requesterObject','*requesterItemObject'
 
 EXPORT OBJECT eSrcGen OF srcGen
 ENDOBJECT
 
 ENUM ENUM_IDS, ENUM_IDENTS, ENUM_IDXS
 
-PROC create(fser:PTR TO fileStreamer,libsused,definitionOnly,useIds,useMacros) OF eSrcGen
+PROC create(fser:PTR TO baseStreamer,libsused,definitionOnly,useIds,useMacros) OF eSrcGen
   SUPER self.create(fser,libsused,definitionOnly,useIds,useMacros)
   self.type:=ESOURCE_GEN
   self.stringDelimiter:=39
@@ -63,7 +62,7 @@ PROC genHeader(screenObject:PTR TO screenObject,rexxObject:PTR TO rexxObject, re
   DEF windowObject:PTR TO reactionObject
   DEF layoutObject:PTR TO reactionObject
   DEF listObjects:PTR TO stdlist
-  DEF reqItem:PTR TO requesterItem
+  DEF reqItem:PTR TO requesterItemObject
   DEF bodyText
   
   hasarexx:=(rexxObject.commands.count()>0) AND (StrLen(rexxObject.hostName)>0)
@@ -121,6 +120,7 @@ PROC genHeader(screenObject:PTR TO screenObject,rexxObject:PTR TO rexxObject, re
   ENDIF
   self.writeLine('      \aintuition/intuition\a,')
   self.writeLine('      \aintuition/imageclass\a,')
+  self.writeLine('      \aintuition/icclass\a,')
   self.writeLine('      \aintuition/screens\a,')
   IF self.libsused[TYPE_GETSCREENMODE]
     self.writeLine('      \agraphics/displayinfo\a,')
@@ -134,7 +134,7 @@ PROC genHeader(screenObject:PTR TO screenObject,rexxObject:PTR TO rexxObject, re
       self.writeLine('      \autility/hooks\a,\atools/installhook\a,')
     ENDIF
   ENDIF
-  IF requesterObject.requesterItems.count()>0
+  IF requesterObject.children.count()>0
     self.writeLine('      \arequester\a,\aclasses/requester\a,')
   ENDIF
   
@@ -323,7 +323,7 @@ PROC genHeader(screenObject:PTR TO screenObject,rexxObject:PTR TO rexxObject, re
   IF self.libsused[TYPE_VIRTUAL] THEN self.writeLine('  IF (virtualbase:=OpenLibrary(\agadgets/virtual.gadget\a,0))=NIL THEN Throw(\qLIB\q,\qvirt\q)')
   IF self.libsused[TYPE_SKETCH] THEN self.writeLine('  IF (sketchboardbase:=OpenLibrary(\agadgets/sketchboard.gadget\a,0))=NIL THEN Throw(\qLIB\q,\qskch\q)')
   IF self.libsused[TYPE_TABS] THEN self.writeLine('  IF (tabsbase:=OpenLibrary(\agadgets/tabs.gadget\a,0))=NIL THEN Throw(\qLIB\q,\qtabs\q)')
-  IF requesterObject.requesterItems.count()>0 THEN self.writeLine('  IF (requesterbase:=OpenLibrary(\aclasses/requester.class\a,0))=NIL THEN Throw(\qLIB\q,\qreqs\q)')
+  IF requesterObject.children.count()>0 THEN self.writeLine('  IF (requesterbase:=OpenLibrary(\aclasses/requester.class\a,0))=NIL THEN Throw(\qLIB\q,\qreqs\q)')
 
   self.genScreenCreate(screenObject)
   self.writeLine('  IF (gVisInfo:=GetVisualInfoA(gScreen, [TAG_END]))=NIL THEN Raise(\qvisi\q)')
@@ -396,7 +396,7 @@ PROC genHeader(screenObject:PTR TO screenObject,rexxObject:PTR TO rexxObject, re
   IF self.libsused[TYPE_VIRTUAL] THEN self.writeLine('  IF virtualbase THEN CloseLibrary(virtualbase)')
   IF self.libsused[TYPE_SKETCH] THEN self.writeLine('  IF sketchboardbase THEN CloseLibrary(sketchboardbase)')
   IF self.libsused[TYPE_TABS] THEN self.writeLine('  IF tabsbase THEN CloseLibrary(tabsbase)')
-  IF requesterObject.requesterItems.count()>0 THEN self.writeLine('  IF requesterbase THEN CloseLibrary(requesterbase)')
+  IF requesterObject.children.count()>0 THEN self.writeLine('  IF requesterbase THEN CloseLibrary(requesterbase)')
 
   self.writeLine('ENDPROC')
   self.writeLine('')
@@ -617,9 +617,24 @@ PROC genHeader(screenObject:PTR TO screenObject,rexxObject:PTR TO rexxObject, re
   self.writeLine('  RA_CloseWindow(windowObject)')
   self.writeLine('ENDPROC')
   self.writeLine('')
-  FOR i:=0 TO requesterObject.requesterItems.count()-1
-    reqItem:=requesterObject.requesterItems.item(i)
-    StringF(tempStr,'PROC requester\d(reactionWindow)\n',i)
+  FOR i:=0 TO requesterObject.children.count()-1
+    reqItem:=requesterObject.children.item(i)
+    StrCopy(tempStr,reqItem.ident)
+    LowerStr(tempStr)
+    StringF(tempStr,'PROC \s(reactionWindow',tempStr)
+    IF reqItem.titleParam
+      StrAdd(tempStr,',titleText')
+    ENDIF
+
+    IF reqItem.gadgetsParam
+      StrAdd(tempStr,',gadgetsText')
+    ENDIF
+    
+    IF reqItem.bodyParam
+      StrAdd(tempStr,',bodyText')
+    ENDIF
+    StrAdd(tempStr,')')
+    
     self.writeLine(tempStr)
     self.writeLine('  DEF reqmsg:PTR TO orrequest')
     self.writeLine('  DEF reqobj,win,res=0')
@@ -630,14 +645,46 @@ PROC genHeader(screenObject:PTR TO screenObject,rexxObject:PTR TO rexxObject, re
     self.writeLine('  reqmsg.methodid:=RM_OPENREQ')
     self.writeLine('  reqmsg.window:=win')
     bodyText:=reqItem.bodyText.makeTextString('\\n')
-    StringF(tempStr,'  reqmsg.attrs:=[REQ_TYPE, \s, REQ_IMAGE, \s, REQ_TITLETEXT,\a\s\a,REQ_BODYTEXT,\a\s\a,REQ_GADGETTEXT,\a\s\a,TAG_END]',
-                            ListItem(['REQTYPE_INFO','REQTYPE_INTEGER','REQTYPE_STRING'],reqItem.reqType),
-                            ListItem(['REQIMAGE_DEFAULT', 'REQIMAGE_INFO', 'REQIMAGE_WARNING', 'REQIMAGE_ERROR', 'REQIMAGE_QUESTION', 'REQIMAGE_INSERTDISK'],reqItem.image),
-                            reqItem.titleText,
-                            bodyText,
-                            reqItem.gadgetsText)
-    Dispose(bodyText)
+    StringF(tempStr,'  reqmsg.attrs:=[REQ_TYPE, \s, REQ_IMAGE, \s,',
+        ListItem(['REQTYPE_INFO','REQTYPE_INTEGER','REQTYPE_STRING'],reqItem.reqType),
+        ListItem(['REQIMAGE_DEFAULT', 'REQIMAGE_INFO', 'REQIMAGE_WARNING', 'REQIMAGE_ERROR', 'REQIMAGE_QUESTION', 'REQIMAGE_INSERTDISK'],reqItem.image))
     self.writeLine(tempStr)
+    StringF(tempStr,'      REQ_TITLETEXT,\s\s\s,',
+        IF reqItem.titleParam THEN '' ELSE '\a',
+        IF reqItem.titleParam THEN 'titleText' ELSE reqItem.titleText,
+        IF reqItem.titleParam THEN '' ELSE '\a')
+    self.writeLine(tempStr)   
+    StringF(tempStr,'      REQ_BODYTEXT,\s\s\s,',
+        IF reqItem.bodyParam  THEN '' ELSE '\a',
+        IF reqItem.bodyParam THEN 'bodyText' ELSE bodyText,
+        IF reqItem.bodyParam THEN '' ELSE '\a')
+    self.writeLine(tempStr)
+    StringF(tempStr,'      REQ_GADGETTEXT,\s\s\s,',
+        IF reqItem.gadgetsParam THEN '' ELSE '\a',
+        IF reqItem.gadgetsParam THEN 'gadgetsText' ELSE reqItem.gadgetsText,
+        IF reqItem.gadgetsParam THEN '' ELSE '\a')
+    self.writeLine(tempStr)
+
+    IF reqItem.invisible
+      SELECT reqItem.reqType
+        CASE 1
+          self.writeLine('      REQI_INVISIBLE, TRUE,')
+        CASE 2
+          self.writeLine('      REQS_INVISIBLE, TRUE,')
+      ENDSELECT
+    ENDIF
+    SELECT reqItem.reqType
+      CASE 1
+        StringF(tempStr,'      REQI_MAXCHARS, \d,',IF reqItem.maxChars>10 THEN 10 ELSE reqItem.maxChars)
+        self.writeLine(tempStr)   
+      CASE 2
+        StringF(tempStr,'      REQS_MAXCHARS, \d,',reqItem.maxChars)
+        self.writeLine(tempStr)   
+    ENDSELECT
+    
+    self.writeLine('      TAG_END]')
+    DisposeLink(bodyText)
+
     self.writeLine('  reqobj:=NewObjectA(Requester_GetClass(),0,[TAG_END])')
     self.writeLine('  IF reqobj')
     self.writeLine('    res:=DoMethodA(reqobj, reqmsg)')
@@ -960,7 +1007,7 @@ PROC genWindowHeader(count, windowObject:PTR TO windowObject, menuObject:PTR TO 
         ELSE
           StringF(tempStr,'             \s,-1,\a\s\a,0,',itemName,hintText)
         ENDIF         
-        Dispose(hintText)
+        DisposeLink(hintText)
         self.writeLine(tempStr)
         j++
       ENDIF
@@ -973,6 +1020,8 @@ PROC genWindowHeader(count, windowObject:PTR TO windowObject, menuObject:PTR TO 
     self.writeLine('')  
     END listObjects
   ENDIF
+  layoutObject.genComponentMaps(TRUE,self)
+  
   self.indent:=2
 ENDPROC
 
@@ -985,6 +1034,8 @@ PROC genWindowFooter(count, windowObject:PTR TO windowObject, menuObject:PTR TO 
 
   StringF(tempStr,'  mainGadgets[\d]:=0',count)
   self.writeLine(tempStr)
+
+  layoutObject.genComponentMaps(FALSE,self)
 
   StrCopy(windowName,windowObject.ident)
   UpperStr(windowName)
@@ -1272,3 +1323,24 @@ PROC makeList2(start:PTR TO CHAR,list:PTR TO stringlist) OF eSrcGen
   StrAdd(res,'0])')
 ENDPROC res
 
+PROC setIcaMap(header, mapText,mapSource:PTR TO reactionObject,mapTarget:PTR TO reactionObject) OF eSrcGen
+  DEF tempStr1[255]:STRING
+  DEF tempStr2[255]:STRING
+  DEF upperMap
+  
+  IF header=0
+    StrCopy(tempStr2,mapSource.ident)
+    UpperStr(tempStr2)
+    upperMap:=AstrClone(mapText)
+    UpperStr(upperMap)
+    self.writeLine('')
+    StringF(tempStr1,'  SetGadgetAttrsA(mainGadgets[\s],0,0,[ICA_MAP,[\s,TAG_DONE],TAG_DONE])',tempStr2,upperMap)
+    DisposeLink(upperMap)
+    
+    self.writeLine(tempStr1)
+    StrCopy(tempStr1,mapTarget.ident)
+    UpperStr(tempStr1)
+    StringF(tempStr1,'  SetGadgetAttrsA(mainGadgets[\s],0,0,[ICA_TARGET,mainGadgets[\s],TAG_DONE])',tempStr2,tempStr1)
+    self.writeLine(tempStr1)
+  ENDIF
+ENDPROC

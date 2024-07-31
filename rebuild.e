@@ -40,9 +40,9 @@ OPT OSVERSION=37,LARGE
         'workbench/workbench',
         'amigalib/boopsi','exec/memory',
         'listbrowser','gadgets/listbrowser',
-        'intuition/intuition','intuition/imageclass','intuition/gadgetclass','intuition/classusr'
+        'intuition/intuition','intuition/screens','intuition/imageclass','intuition/gadgetclass','intuition/classusr'
 
-  MODULE '*fileStreamer','*objectPicker','*cSourceGen', '*eSourceGen',
+  MODULE '*fileStreamer','*stringStreamer','*baseStreamer','*objectPicker','*cSourceGen', '*eSourceGen',
          '*sourceGen','*codeGenForm','*listManagerForm','*reactionLists','*dialogs','*libraryVersions',
          '*getScreenModeObject','*getFontObject','*getFileObject','*textFieldObject','*drawListObject','*fuelGaugeObject',
          '*bevelObject','*listBrowserObject','*clickTabObject','*chooserObject','*radioObject','*menuObject',
@@ -51,7 +51,8 @@ OPT OSVERSION=37,LARGE
          '*stringObject','*integerObject','*stringlist','*reactionObject','*reactionForm','*boingBallObject',
          '*penMapObject','*sliderObject','*bitmapObject','*speedBarObject','*colorWheelObject','*dateBrowserObject',
          '*getColorObject','*gradSliderObject','*tapeDeckObject','*textEditorObject','*ledObject','*listViewObject',
-         '*virtualObject','*sketchboardObject','*tabsObject','*requesterObject'
+         '*virtualObject','*sketchboardObject','*tabsObject','*requesterObject',
+         '*requesterItemObject','*codePreviewForm'
 
 #define vernum '1.2.0-dev'
 #date verstring '$VER:Rebuild 1.2.0-%Y%m%d%h%n%s'
@@ -59,6 +60,8 @@ OPT OSVERSION=37,LARGE
 #ifndef EVO_3_7_0
   FATAL 'Rebuild should only be compiled with E-VO Amiga E Compiler v3.7.0 or higher'
 #endif
+
+  CONST MAX_UNDO_COUNT=20
 
   CONST ROOT_APPLICATION_ITEM=0
   CONST ROOT_REXX_ITEM=1
@@ -85,25 +88,30 @@ OPT OSVERSION=37,LARGE
   CONST MENU_PROJECT_SAVE=2
   CONST MENU_PROJECT_SAVEAS=3
   CONST MENU_PROJECT_REOPEN=4
-  CONST MENU_PROJECT_GENCODE=6
-  CONST MENU_PROJECT_SHOWLIBS=8
-  CONST MENU_PROJECT_ABOUT=10
-  CONST MENU_PROJECT_QUIT=12
+  CONST MENU_PROJECT_CODEOPTIONS=6
+  CONST MENU_PROJECT_SAVECODE=7
+  CONST MENU_PROJECT_SHOWLIBS=9
+  CONST MENU_PROJECT_ABOUT=11
+  CONST MENU_PROJECT_QUIT=13
 
-  CONST MENU_EDIT_ADD_GADGET=0
-  CONST MENU_EDIT_ADD_IMAGE=1
-  CONST MENU_EDIT_ADD_WINDOW=2
-  CONST MENU_EDIT_ADD_HLAYOUT=3
-  CONST MENU_EDIT_ADD_VLAYOUT=4
-  CONST MENU_EDIT_EDIT=6
-  CONST MENU_EDIT_DELETE=7
-  CONST MENU_EDIT_MOVE=9
-  CONST MENU_EDIT_LISTS=11
-  CONST MENU_EDIT_BUFFER=13
-  CONST MENU_EDIT_SHOW_ADD_SETTINGS=14
-  CONST MENU_EDIT_WARN_ON_DEL=15
-  CONST MENU_EDIT_SAVE_ICONS=16
-  CONST MENU_EDIT_PREVIEW=18
+  CONST MENU_EDIT_UNDO=0
+  CONST MENU_EDIT_REDO=1
+
+  CONST MENU_EDIT_ADD_GADGET=3
+  CONST MENU_EDIT_ADD_IMAGE=4
+  CONST MENU_EDIT_ADD_WINDOW=5
+  CONST MENU_EDIT_ADD_HLAYOUT=6
+  CONST MENU_EDIT_ADD_VLAYOUT=7
+  CONST MENU_EDIT_EDIT=9
+  CONST MENU_EDIT_DELETE=10
+  CONST MENU_EDIT_MOVE=12
+  CONST MENU_EDIT_LISTS=14
+  CONST MENU_EDIT_BUFFER=16
+  CONST MENU_EDIT_SHOW_ADD_SETTINGS=17
+  CONST MENU_EDIT_WARN_ON_DEL=18
+  CONST MENU_EDIT_SAVE_ICONS=19
+  CONST MENU_EDIT_PREVIEWCODE=20
+  CONST MENU_EDIT_PREVIEW=22
   
   CONST MENU_EDIT_MOVEUP=0
   CONST MENU_EDIT_MOVEDOWN=1
@@ -122,10 +130,15 @@ OPT OSVERSION=37,LARGE
     showSettingsOnAdd:CHAR
     warnOnDelete:CHAR
     saveProjectIcons:CHAR
+    previewCode:CHAR
     windowTop:INT
     windowLeft:INT
     windowWidth:INT
     windowHeight:INT
+    codePreviewTop:INT
+    codePreviewLeft:INT
+    codePreviewWidth:INT
+    codePreviewHeight:INT
   ENDOBJECT
 
 
@@ -163,6 +176,10 @@ OPT OSVERSION=37,LARGE
   DEF codeOptions: codeOptions
   DEF systemOptions: systemOptions
   DEF recentFiles:PTR TO stringlist
+  DEF undoData:PTR TO stdlist
+  DEF undoPos=-1
+  
+  DEF codePreviewForm:PTR TO codePreviewForm
 
 PROC openClasses()
   IF (requesterbase:=OpenLibrary('requester.class',0))=NIL THEN Throw("LIB","reqr")
@@ -210,6 +227,7 @@ PROC openClasses()
   ledbase:=OpenLibrary('images/led.image',0)
   smartbitmapbase:=OpenLibrary('images/smartbitmap.image',0)
   titlebarbase:=OpenLibrary('images/titlebar.image',0)
+  IF (texteditorbase=NIL) AND (textfieldbase=NIL) THEN Throw("LIB","text")
 ENDPROC
 
 PROC closeClasses()
@@ -254,6 +272,7 @@ PROC closeClasses()
   IF statusbarbase THEN CloseLibrary(statusbarbase)
   IF tapedeckbase THEN CloseLibrary(tapedeckbase)
   IF textfieldbase THEN CloseLibrary(textfieldbase)
+  IF texteditorbase THEN CloseLibrary(texteditorbase)
   IF virtualbase THEN CloseLibrary(virtualbase)
   IF boingballbase THEN CloseLibrary(boingballbase)
   IF ledbase THEN CloseLibrary(ledbase)
@@ -270,7 +289,7 @@ PROC makeComponentList(comp:PTR TO reactionObject,generation,list, selcomp, newn
   StringF(idStr,'\d',comp.id)
   StrCopy(typeStr,comp.getTypeName())
   IF (n:=AllocListBrowserNodeA(3,
-    [LBNA_FLAGS, IF (comp.parent=0) OR (comp.allowChildren()) THEN LBFLG_HASCHILDREN OR LBFLG_SHOWCHILDREN ELSE 0,
+    [LBNA_FLAGS, IF (comp.parent=0) OR (comp.allowChildren()) THEN LBFLG_HASCHILDREN OR (IF comp.expanded THEN LBFLG_SHOWCHILDREN ELSE 0) ELSE 0,
      LBNA_USERDATA, comp, LBNA_GENERATION, generation,
      LBNA_COLUMN,0, LBNCA_COPYTEXT, TRUE, LBNCA_TEXT, IF StrLen(comp.ident) THEN comp.ident ELSE typeStr,
      LBNA_COLUMN,1, LBNCA_COPYTEXT, TRUE, LBNCA_TEXT, typeStr,
@@ -321,6 +340,10 @@ PROC addMembers(comp:PTR TO reactionObject,window:PTR TO windowObject)
     FOR i:=0 TO comp.children.count()-1
       addMembers(comp.children.item(i),window)
     ENDFOR
+
+    FOR i:=0 TO comp.children.count()-1
+      comp.children.item(i)::reactionObject.updatePreviewObject()
+    ENDFOR
   ENDIF
 ENDPROC
 
@@ -351,7 +374,7 @@ PROC makeList(selcomp=0)
           IF (n:=AllocListBrowserNodeA(3, [LBNA_FLAGS, LBFLG_HASCHILDREN OR LBFLG_SHOWCHILDREN, LBNA_USERDATA, 0, LBNA_GENERATION, 4, LBNA_COLUMN,0, LBNCA_COPYTEXT, TRUE, LBNCA_TEXT, 'Menu', LBNA_COLUMN,1, LBNCA_COPYTEXT, TRUE, LBNCA_TEXT, 'System',LBNA_COLUMN,2, LBNCA_COPYTEXT, TRUE, LBNCA_TEXT, 'N/A',TAG_END])) THEN AddTail(list, n) ELSE Raise("MEM")
       ENDSELECT
     ELSE
-      IF i==[ROOT_REXX_ITEM,ROOT_REQUESTER_ITEM, ROOT_SCREEN_ITEM]
+      IF i==[ROOT_REXX_ITEM,ROOT_REQUESTER_ITEM, ROOT_SCREEN_ITEM, ROOT_REQUESTER_ITEM]
         depth:=2
       ELSE
         SELECT Mod(i-ROOT_WINDOW_ITEM,3)
@@ -404,6 +427,7 @@ ENDPROC
 
 PROC updateSel(node)
   DEF comp=0:PTR TO reactionObject
+  DEF flags
   DEF child:PTR TO reactionObject
   DEF dis,idx
   DEF check,i,j
@@ -413,8 +437,12 @@ PROC updateSel(node)
   DEF type
   DEF allowchildren=FALSE
   
-  IF node THEN GetListBrowserNodeAttrsA(node,[LBNA_USERDATA,{comp},TAG_END])
+  menuDisable(win,MENU_EDIT,MENU_EDIT_UNDO,0,undoPos=0)
+  menuDisable(win,MENU_EDIT,MENU_EDIT_REDO,0,undoPos>=(undoData.count()-1))
+  
+  IF node THEN GetListBrowserNodeAttrsA(node,[LBNA_USERDATA,{comp},LBNA_FLAGS,{flags},TAG_END])
   IF comp
+    IF flags AND LBFLG_SHOWCHILDREN THEN comp.expanded ELSE comp.expanded:=FALSE
     allowchildren:=(comp.allowChildren()=TRUE) ORELSE ((comp.allowChildren()>0) ANDALSO (comp.children.count()<comp.allowChildren()))
     selectedComp:=comp
     FOR i:=0 TO 31
@@ -701,6 +729,10 @@ PROC loadIconPrefs()
       IF (MatchToolValue(s,'NO')) OR (MatchToolValue(s,'FALSE')) THEN systemOptions.saveProjectIcons:=FALSE ELSE systemOptions.saveProjectIcons:=TRUE
     ENDIF
     
+    IF(s:=FindToolType(dobj.tooltypes,'PREVIEWCODE'))
+      IF (MatchToolValue(s,'NO')) OR (MatchToolValue(s,'FALSE')) THEN systemOptions.previewCode:=FALSE ELSE systemOptions.previewCode:=TRUE
+    ENDIF
+
     IF(s:=FindToolType(dobj.tooltypes,'SAVEPATH'))
       AstrCopy(systemOptions.savePath,s,256)
     ENDIF
@@ -719,6 +751,22 @@ PROC loadIconPrefs()
 
     IF(s:=FindToolType(dobj.tooltypes,'WINDOWHEIGHT'))
       systemOptions.windowHeight:=Val(s)
+    ENDIF
+
+    IF(s:=FindToolType(dobj.tooltypes,'CODEWINDOWLEFT'))
+      systemOptions.codePreviewLeft:=Val(s)
+    ENDIF
+
+    IF(s:=FindToolType(dobj.tooltypes,'CODEWINDOWTOP'))
+      systemOptions.codePreviewTop:=Val(s)
+    ENDIF
+
+    IF(s:=FindToolType(dobj.tooltypes,'CODEWINDOWWIDTH'))
+      systemOptions.codePreviewWidth:=Val(s)
+    ENDIF
+
+    IF(s:=FindToolType(dobj.tooltypes,'CODEWINDOWHEIGHT'))
+      systemOptions.codePreviewHeight:=Val(s)
     ENDIF
 
     FreeDiskObject(dobj)
@@ -782,7 +830,7 @@ PROC createForm()
     WA_SIZEGADGET, TRUE,
     WA_DRAGBAR, TRUE,
     ->WA_NOCAREREFRESH, TRUE,
-    WA_IDCMP,IDCMP_GADGETDOWN OR  IDCMP_GADGETUP OR  IDCMP_CLOSEWINDOW OR IDCMP_MENUPICK,
+    WA_IDCMP,IDCMP_GADGETDOWN OR IDCMP_GADGETUP OR  IDCMP_CLOSEWINDOW OR IDCMP_MENUPICK OR IDCMP_NEWSIZE,
     WINDOW_PARENTGROUP, VLayoutObject,
       LAYOUT_DEFERLAYOUT, TRUE,
       LAYOUT_SPACEOUTER, TRUE,
@@ -883,8 +931,7 @@ PROC createForm()
     LayoutEnd,
   WindowEnd
   
-  toggleBuffer()
-  
+  toggleBuffer() 
 ENDPROC
 
 PROC addObject(parent:PTR TO reactionObject,newobj:PTR TO reactionObject, index=-1)
@@ -957,6 +1004,7 @@ PROC doGenUp(parent:PTR TO reactionObject,child:PTR TO reactionObject)
   DEF idx, mainRootLayout, window
 
   IF (parent.allowChildren()) AND (parent.parent<>0)
+    updateUndo()
     changes:=TRUE
     idx:=findWindowIndex(selectedComp)
     mainRootLayout:=objectList.item(ROOT_LAYOUT_ITEM+(idx*3))
@@ -968,6 +1016,8 @@ PROC doGenUp(parent:PTR TO reactionObject,child:PTR TO reactionObject)
     makeList(child)
     addMembers(mainRootLayout,window)
     rethinkPreviews()
+    addUndo()
+    genCodePreview()
   ENDIF
 ENDPROC
 
@@ -975,6 +1025,7 @@ PROC doGenDown(parent:PTR TO reactionObject, child:PTR TO reactionObject)
   DEF idx, mainRootLayout, window
   DEF newparent: PTR TO reactionObject
 
+  updateUndo()
   changes:=TRUE
   idx:=findWindowIndex(selectedComp)
   mainRootLayout:=objectList.item(ROOT_LAYOUT_ITEM+(idx*3))
@@ -987,6 +1038,8 @@ PROC doGenDown(parent:PTR TO reactionObject, child:PTR TO reactionObject)
   makeList(child)
   addMembers(mainRootLayout,window)
   rethinkPreviews()
+  addUndo()
+  genCodePreview()
 ENDPROC
 
 PROC swapWindows(idx1,idx2)
@@ -1030,6 +1083,7 @@ PROC moveUp(child:PTR TO reactionObject,count=1)
   ENDIF
 
   IF parent.allowChildren()
+    updateUndo()
     changes:=TRUE
     idx:=findWindowIndex(selectedComp)
     mainRootLayout:=objectList.item(ROOT_LAYOUT_ITEM+(idx*3))
@@ -1042,6 +1096,8 @@ PROC moveUp(child:PTR TO reactionObject,count=1)
     makeList(child)
     addMembers(mainRootLayout,window)
     rethinkPreviews()
+    addUndo()
+    genCodePreview()
   ENDIF
 ENDPROC
 
@@ -1066,6 +1122,7 @@ PROC moveDown(child:PTR TO reactionObject,count=1)
   ENDIF
 
   IF parent.allowChildren()
+    updateUndo()
     changes:=TRUE
     idx:=findWindowIndex(selectedComp)
     mainRootLayout:=objectList.item(ROOT_LAYOUT_ITEM+(idx*3))
@@ -1078,6 +1135,8 @@ PROC moveDown(child:PTR TO reactionObject,count=1)
     makeList(child)
     addMembers(mainRootLayout,window)
     rethinkPreviews()
+    addUndo()
+    genCodePreview()
   ENDIF
 ENDPROC
 
@@ -1090,6 +1149,7 @@ PROC movePrevLayout(comp:PTR TO reactionObject)
   WHILE comp.parent.parent.children.item(i)::reactionObject.type<>TYPE_LAYOUT DO i--
   newLayout:=comp.parent.parent.children.item(i)
 
+  updateUndo()
   changes:=TRUE
   idx:=findWindowIndex(comp)
   mainRootLayout:=objectList.item(ROOT_LAYOUT_ITEM+(idx*3))
@@ -1100,6 +1160,8 @@ PROC movePrevLayout(comp:PTR TO reactionObject)
   makeList(comp)
   addMembers(mainRootLayout,window)
   rethinkPreviews()
+  addUndo()
+  genCodePreview()
 ENDPROC
 
 PROC moveNextLayout(comp:PTR TO reactionObject)
@@ -1111,6 +1173,7 @@ PROC moveNextLayout(comp:PTR TO reactionObject)
   WHILE comp.parent.parent.children.item(i)::reactionObject.type<>TYPE_LAYOUT DO i++
   newLayout:=comp.parent.parent.children.item(i)
 
+  updateUndo()
   changes:=TRUE
   idx:=findWindowIndex(comp)
   mainRootLayout:=objectList.item(ROOT_LAYOUT_ITEM+(idx*3))
@@ -1121,6 +1184,9 @@ PROC moveNextLayout(comp:PTR TO reactionObject)
   makeList(comp)
   addMembers(mainRootLayout,window)
   rethinkPreviews()
+  addUndo()
+  genCodePreview()
+
 ENDPROC
 
 PROC moveIntoLayout(comp:PTR TO reactionObject,horiz)
@@ -1131,6 +1197,7 @@ PROC moveIntoLayout(comp:PTR TO reactionObject,horiz)
   
   parent:=comp.parent
   IF parent.allowChildren()
+    updateUndo()
     newComp:=doAddLayoutQuick(parent,horiz)
 
     changes:=TRUE
@@ -1146,6 +1213,8 @@ PROC moveIntoLayout(comp:PTR TO reactionObject,horiz)
     makeList(comp)
     addMembers(mainRootLayout,window)
     rethinkPreviews()  
+    addUndo()
+    genCodePreview()
   ENDIF
 ENDPROC
 
@@ -1261,11 +1330,8 @@ PROC showLibs()
   END libsForm
 ENDPROC
 
-PROC genCode()
-  DEF fs:PTR TO fileStreamer
-  DEF tags
-  DEF fr:PTR TO filerequester
-  DEF fname[255]:STRING
+PROC genCodePreview()
+  DEF fs:PTR TO stringStreamer
   DEF eSrcGen: PTR TO eSrcGen
   DEF cSrcGen: PTR TO cSrcGen
   DEF srcGen:PTR TO srcGen
@@ -1286,14 +1352,132 @@ PROC genCode()
   DEF windowObj:PTR TO windowObject
   DEF tempStr[255]:STRING
   DEF sharedport=0
-  DEF dupeName=0
+  DEF win
+
+  IF codePreviewForm=NIL THEN RETURN
+  win:=Gets(codePreviewForm.windowObj,WINDOW_WINDOW)
+  IF win=NIL THEN RETURN
   
+  FOR i:=0 TO TYPE_MAX-1 DO libsused[i]:=0
+
+  i:=ROOT_LAYOUT_ITEM
+  NEW windowItems.stdlist(10)
+  NEW windowLayouts.stdlist(10)
+  WHILE i<objectList.count()
+    findLibsUsed(objectList.item(i),libsused)
+    windowObj:=objectList.item(i-ROOT_LAYOUT_ITEM+ROOT_WINDOW_ITEM)
+    IF windowObj.sharedPort THEN sharedport:=TRUE
+    windowItems.add(windowObj)
+    windowLayouts.add(objectList.item(i))
+    i+=3
+  ENDWHILE
+
+  NEW fs.create()
+
+  SELECT codeOptions.langid
+    CASE LANG_E
+      NEW eSrcGen.create(fs,libsused,codeOptions.fullcode=FALSE,codeOptions.useids,codeOptions.usemacros)
+      srcGen:=eSrcGen
+    CASE LANG_C
+      NEW cSrcGen.create(fs,libsused,codeOptions.fullcode=FALSE,codeOptions.useids,codeOptions.usemacros)
+      srcGen:=cSrcGen
+  ENDSELECT
+
+  i:=0
+  windowComp:=objectList.item(ROOT_WINDOW_ITEM)
+  screenComp:=objectList.item(ROOT_SCREEN_ITEM)
+  rexxComp:=objectList.item(ROOT_REXX_ITEM)
+  requesterComp:=objectList.item(ROOT_REQUESTER_ITEM)
+  srcGen.genHeader(screenComp,rexxComp,requesterComp,windowItems,windowLayouts, sharedport)
+  END windowItems
+  END windowLayouts
+  WHILE (i+ROOT_WINDOW_ITEM)<objectList.count()
+    windowComp:=objectList.item(i+ROOT_WINDOW_ITEM)
+    menuComp:=objectList.item(i+ROOT_MENU_ITEM)
+    layoutComp:=objectList.item(i+ROOT_LAYOUT_ITEM)
+    count:=countGads(layoutComp)
+  
+    srcGen.genWindowHeader(count,windowComp,menuComp,layoutComp, getReactionLists())
+    srcGen.assignWindowVar()
+    IF codeOptions.usemacros
+      StringF(objectCreate,'\sObject,',windowComp.getTypeName())
+      srcGen.componentCreate(objectCreate)
+      StringF(objectEnd,'\sEnd',windowComp.getTypeName())
+    ELSE
+      srcGen.componentLibtypeCreate(windowComp.getTypeName())
+      StrCopy(objectEnd,'')
+    ENDIF
+
+    windowComp.genCodeProperties(srcGen)
+    
+    IF screenComp.custom
+      srcGen.componentProperty('WA_CustomScreen','gScreen',FALSE)
+    ENDIF
+    IF codeOptions.usemacros
+      srcGen.componentProperty('WINDOW_ParentGroup','VLayoutObject',FALSE)
+    ELSE
+      srcGen.componentPropertyCreate('WINDOW_ParentGroup','Layout')
+      srcGen.componentProperty('LAYOUT_Orientation','LAYOUT_ORIENT_VERT',FALSE)
+    ENDIF
+    srcGen.componentProperty('LAYOUT_SpaceOuter','TRUE',FALSE)
+    srcGen.componentProperty('LAYOUT_DeferLayout','TRUE',FALSE)
+    srcGen.increaseIndent()
+    genComponentCode(layoutComp,srcGen)
+    IF codeOptions.usemacros
+      srcGen.componentEnd('LayoutEnd,') 
+    ELSE
+      srcGen.componentEndNoMacro(TRUE) 
+    ENDIF
+    srcGen.finalComponentEnd(objectEnd) 
+    srcGen.decreaseIndent()
+    srcGen.genWindowFooter(count,windowComp,menuComp,layoutComp, getReactionLists())
+    i+=3
+  ENDWHILE
+  windowComp:=objectList.item(ROOT_WINDOW_ITEM)
+  srcGen.genFooter(windowComp,rexxComp)
+  codePreviewForm.showCode(fs)
+  END srcGen
+  END fs
+ENDPROC
+
+PROC editCodeOptions()
+  DEF codeGenForm:PTR TO codeGenForm
+
   setBusy()
   NEW codeGenForm.create()
-  res:=codeGenForm.selectLang(codeOptions)
+  codeGenForm.selectLang(codeOptions)
   END codeGenForm
   clearBusy()
-  IF res=FALSE THEN RETURN
+  genCodePreview()
+ENDPROC
+
+PROC genCode()
+  DEF fs:PTR TO fileStreamer
+  DEF tags
+  DEF fr:PTR TO filerequester
+  DEF fname[255]:STRING
+  DEF eSrcGen: PTR TO eSrcGen
+  DEF cSrcGen: PTR TO cSrcGen
+  DEF srcGen:PTR TO srcGen
+  DEF count
+  DEF objectCreate[50]:STRING
+  DEF objectEnd[50]:STRING
+  DEF i,j
+  DEF menuComp:PTR TO reactionObject
+  DEF windowComp:PTR TO reactionObject
+  DEF layoutComp:PTR TO reactionObject
+  DEF requesterComp:PTR TO reactionObject
+  DEF screenComp:PTR TO screenObject
+  DEF rexxComp:PTR TO rexxObject
+  DEF libsused[TYPE_MAX]:ARRAY OF CHAR
+  DEF windowItems:PTR TO stdlist
+  DEF windowLayouts:PTR TO stdlist
+  DEF windowObj:PTR TO windowObject
+  DEF tempStr[255]:STRING
+  DEF sharedport=0
+  DEF dupeName=0
+  
+  genCodePreview()
 
   aslbase:=OpenLibrary('asl.library',37)
   IF aslbase=NIL THEN Throw("LIB","ASL")
@@ -1472,17 +1656,305 @@ PROC addRecent(filename:PTR TO CHAR)
   recentFiles.insert(0,filename)
 ENDPROC
 
-PROC loadFile(loadfilename:PTR TO CHAR) HANDLE
-  DEF fs=0:PTR TO fileStreamer
+PROC loadSettings()
+  DEF fs:PTR TO fileStreamer
+  DEF tempStr[300]:STRING
+  NEW fs.create('ENVARC:Rebuild/systemOptions',MODE_OLDFILE)
+  IF fs.isOpen()
+    WHILE fs.readLine(tempStr)
+      IF StrCmp(tempStr,'SAVEPATH=',STRLEN)
+        AstrCopy(systemOptions.savePath,tempStr+STRLEN,255)
+      ELSEIF StrCmp(tempStr,'SHOWBUFFER=',STRLEN)
+        systemOptions.showBuffer:=Val(tempStr+STRLEN)
+      ELSEIF StrCmp(tempStr,'SHOWONADD=',STRLEN)
+        systemOptions.showSettingsOnAdd:=Val(tempStr+STRLEN)
+      ELSEIF StrCmp(tempStr,'WARNONDEL=',STRLEN)
+        systemOptions.warnOnDelete:=Val(tempStr+STRLEN)
+      ELSEIF StrCmp(tempStr,'SAVEPROJICONS=',STRLEN)
+        systemOptions.saveProjectIcons:=Val(tempStr+STRLEN)
+      ELSEIF StrCmp(tempStr,'PREVIEWCODE=',STRLEN)
+        systemOptions.previewCode:=Val(tempStr+STRLEN)
+      ELSEIF StrCmp(tempStr,'WINDOWLEFT=',STRLEN)
+        systemOptions.windowLeft:=Val(tempStr+STRLEN)
+      ELSEIF StrCmp(tempStr,'WINDOWTOP=',STRLEN)
+        systemOptions.windowTop:=Val(tempStr+STRLEN)
+      ELSEIF StrCmp(tempStr,'WINDOWWIDTH=',STRLEN)
+        systemOptions.windowWidth:=Val(tempStr+STRLEN)
+      ELSEIF StrCmp(tempStr,'WINDOWHEIGHT=',STRLEN)
+        systemOptions.windowHeight:=Val(tempStr+STRLEN)
+      ELSEIF StrCmp(tempStr,'CODEPREVIEWLEFT=',STRLEN)
+        systemOptions.codePreviewLeft:=Val(tempStr+STRLEN)
+      ELSEIF StrCmp(tempStr,'CODEPREVIEWTOP=',STRLEN)
+        systemOptions.codePreviewTop:=Val(tempStr+STRLEN)
+      ELSEIF StrCmp(tempStr,'CODEPREVIEWWIDTH=',STRLEN)
+        systemOptions.codePreviewWidth:=Val(tempStr+STRLEN)
+      ELSEIF StrCmp(tempStr,'CODEPREVIEWHEIGHT=',STRLEN)
+        systemOptions.codePreviewHeight:=Val(tempStr+STRLEN)
+      ENDIF
+    ENDWHILE
+  ENDIF
+  END fs
+
+  NEW fs.create('ENVARC:Rebuild/codeOptions',MODE_OLDFILE)
+  IF fs.isOpen()
+    WHILE fs.readLine(tempStr)
+      IF StrCmp(tempStr,'LANGID=',STRLEN)
+        codeOptions.langid:=Val(tempStr+STRLEN)
+      ELSEIF StrCmp(tempStr,'USEIDS=',STRLEN)
+        codeOptions.useids:=Val(tempStr+STRLEN)
+      ELSEIF StrCmp(tempStr,'FULLCODE=',STRLEN)
+        codeOptions.fullcode:=Val(tempStr+STRLEN)
+      ELSEIF StrCmp(tempStr,'USEMACROS=',STRLEN)
+        codeOptions.usemacros:=Val(tempStr+STRLEN)
+      ELSEIF StrCmp(tempStr,'SAVEPATH=',STRLEN)
+        AstrCopy(codeOptions.savePath,tempStr+STRLEN,255)
+      ENDIF
+    ENDWHILE
+  ENDIF
+  END fs
+ENDPROC
+
+PROC saveSettings()
+  DEF fs:PTR TO fileStreamer,fl
+  DEF tempStr[300]:STRING
+  fl:=CreateDir('ENVARC:Rebuild')
+  IF fl THEN UnLock(fl)
+  NEW fs.create('ENVARC:Rebuild/systemOptions',MODE_NEWFILE)
+  IF fs.isOpen()
+    StringF(tempStr,'SAVEPATH=\s',systemOptions.savePath)
+    fs.writeLine(tempStr)
+    StringF(tempStr,'SHOWBUFFER=\d',systemOptions.showBuffer)
+    fs.writeLine(tempStr)
+    StringF(tempStr,'SHOWONADD=\d',systemOptions.showSettingsOnAdd)
+    fs.writeLine(tempStr)
+    StringF(tempStr,'WARNONDEL=\d',systemOptions.warnOnDelete)
+    fs.writeLine(tempStr)
+    StringF(tempStr,'SAVEPROJICONS=\d',systemOptions.saveProjectIcons)
+    fs.writeLine(tempStr)
+    StringF(tempStr,'PREVIEWCODE=\d',systemOptions.previewCode)
+    fs.writeLine(tempStr)
+    StringF(tempStr,'WINDOWLEFT=\d',systemOptions.windowLeft)
+    fs.writeLine(tempStr)
+    StringF(tempStr,'WINDOWTOP=\d',systemOptions.windowTop)
+    fs.writeLine(tempStr)
+    StringF(tempStr,'WINDOWWIDTH=\d',systemOptions.windowWidth)
+    fs.writeLine(tempStr)
+    StringF(tempStr,'WINDOWHEIGHT=\d',systemOptions.windowHeight)
+    fs.writeLine(tempStr) 
+    StringF(tempStr,'CODEPREVIEWLEFT=\d',systemOptions.codePreviewLeft)
+    fs.writeLine(tempStr) 
+    StringF(tempStr,'CODEPREVIEWTOP=\d',systemOptions.codePreviewTop)
+    fs.writeLine(tempStr) 
+    StringF(tempStr,'CODEPREVIEWWIDTH=\d',systemOptions.codePreviewWidth)
+    fs.writeLine(tempStr) 
+    StringF(tempStr,'CODEPREVIEWHEIGHT=\d',systemOptions.codePreviewHeight)
+    fs.writeLine(tempStr) 
+  ENDIF
+  END fs
+
+  NEW fs.create('ENVARC:Rebuild/codeOptions',MODE_NEWFILE)
+  IF fs.isOpen()
+    StringF(tempStr,'LANGID=\d',codeOptions.langid)
+    fs.writeLine(tempStr)
+    StringF(tempStr,'USEIDS=\d',codeOptions.useids)
+    fs.writeLine(tempStr)
+    StringF(tempStr,'FULLCODE=\d',codeOptions.fullcode)
+    fs.writeLine(tempStr)
+    StringF(tempStr,'USEMACROS=\d',codeOptions.usemacros)
+    fs.writeLine(tempStr)
+    StringF(tempStr,'SAVEPATH=\s',codeOptions.savePath)
+    fs.writeLine(tempStr)
+  ENDIF
+  END fs    
+ENDPROC
+
+PROC loadStream(fs:PTR TO baseStreamer) HANDLE
   DEF newObj:PTR TO reactionObject
-  DEF tmpObj:PTR TO reactionObject
+  DEF tmpObj:PTR TO windowObject
   DEF tempStr[300]:STRING
   DEF loadObjectList=0:PTR TO stdlist
   DEF reactionLists:PTR TO stdlist
   DEF type,i
   DEF a=0:PTR TO menuitem
 
-  DEF ver,newid,v
+  DEF ver,newid,v,selid=0,selcomp=0
+
+  fs.readLine(tempStr)
+  IF StrCmp(tempStr,'-REBUILD-')=FALSE
+    Raise("INVF")
+  ENDIF
+
+  fs.readLine(tempStr)
+  WHILE (StrCmp(tempStr,'#')=FALSE)
+    IF StrCmp(tempStr,'VER=',STRLEN)
+      ver:=Val(tempStr+STRLEN)
+      IF (ver<1)
+        Raise("INVF")
+      ENDIF
+      IF (ver>FILE_FORMAT_VER)
+        Raise("VERS")
+      ENDIF
+    ELSEIF StrCmp(tempStr,'NEXTID=',STRLEN)
+      newid:=Val(tempStr+STRLEN)
+      IF newid<1
+        Raise("INVF")
+      ENDIF
+    ELSEIF StrCmp(tempStr,'SELECTEDID=',STRLEN)
+      selid:=Val(tempStr+STRLEN)
+      IF selid<1
+        Raise("INVF")
+      ENDIF
+    ELSEIF StrCmp(tempStr,'VIEWTMP=',STRLEN)
+      v:=Val(tempStr+STRLEN)
+      IF Eor((v=TRUE),(bufferLayout<>0))
+        toggleBuffer()
+      ENDIF
+    ELSEIF StrCmp(tempStr,'ADDSETT=',STRLEN)
+      v:=Val(tempStr+STRLEN)
+      systemOptions.showSettingsOnAdd:=(v<>0)
+      IF win
+        a:=ItemAddress(win.menustrip,menuCode(MENU_EDIT,MENU_EDIT_SHOW_ADD_SETTINGS,0))
+        IF a
+          IF v
+            a.flags:=a.flags OR CHECKED
+          ELSE
+            a.flags:=a.flags AND Not(CHECKED)
+          ENDIF
+        ENDIF
+      ENDIF
+    ELSEIF StrCmp(tempStr,'PREVIEWCODE=',STRLEN)
+      v:=Val(tempStr+STRLEN)
+      systemOptions.previewCode:=(v<>0)
+      IF win
+        a:=ItemAddress(win.menustrip,menuCode(MENU_EDIT,MENU_EDIT_PREVIEWCODE,0))
+        IF a
+          IF v
+            a.flags:=a.flags OR CHECKED
+          ELSE
+            a.flags:=a.flags AND Not(CHECKED)
+          ENDIF
+        ENDIF
+      ENDIF
+    ELSEIF StrCmp(tempStr,'CODEWINLEFT=',STRLEN)
+      v:=Val(tempStr+STRLEN)
+      systemOptions.codePreviewLeft:=v
+    ELSEIF StrCmp(tempStr,'CODEWINTOP=',STRLEN)
+      v:=Val(tempStr+STRLEN)
+      systemOptions.codePreviewTop:=v
+    ELSEIF StrCmp(tempStr,'CODEWINWIDTH=',STRLEN)
+      v:=Val(tempStr+STRLEN)
+      systemOptions.codePreviewWidth:=v
+    ELSEIF StrCmp(tempStr,'CODEWINHEIGHT=',STRLEN)
+      v:=Val(tempStr+STRLEN)
+      systemOptions.codePreviewHeight:=v
+    ELSEIF StrCmp(tempStr,'LANGID=',STRLEN)
+      v:=Val(tempStr+STRLEN)
+      codeOptions.langid:=v
+    ELSEIF StrCmp(tempStr,'USEIDS=',STRLEN)
+      v:=Val(tempStr+STRLEN)
+      codeOptions.useids:=IF v THEN TRUE ELSE FALSE
+    ELSEIF StrCmp(tempStr,'FULLCODE=',STRLEN)
+      v:=Val(tempStr+STRLEN)
+      codeOptions.fullcode:=IF v THEN TRUE ELSE FALSE
+    ELSEIF StrCmp(tempStr,'CODEFOLDER=',STRLEN)
+      AstrCopy(codeOptions.savePath,tempStr+STRLEN,256)
+    ELSEIF StrCmp(tempStr,'USEMACROS=',STRLEN)
+      v:=Val(tempStr+STRLEN)
+      codeOptions.usemacros:=IF v THEN TRUE ELSE FALSE
+    ENDIF
+
+    IF fs.readLine(tempStr)<=0
+      Raise("INVF")
+    ENDIF
+  ENDWHILE
+  
+  i:=ROOT_WINDOW_ITEM
+  WHILE i<objectList.count()
+    removeMembers(objectList.item(i+ROOT_LAYOUT_ITEM-ROOT_WINDOW_ITEM),objectList.item(i))
+    i+=3
+  ENDWHILE
+  disposeObjects()
+  objectInitialise()
+
+  objectList.add(0)  ->Application begin
+  objectList.add(0)  ->Rexx
+  objectList.add(0)  ->Requester
+  objectList.add(0)  ->Screen
+  objectList.add(0)  ->Window
+  objectList.add(0)  ->Menu
+  objectList.add(0)  ->Layout
+
+  NEW loadObjectList.stdlist(100)
+
+  reactionLists:=getReactionLists()
+
+  WHILE (fs.readLine(tempStr)>0)
+    IF StrCmp('TYPE: ',tempStr,6)
+      type:=Val(tempStr+6)
+      newObj:=createObjectByType(type,0)
+      IF type=TYPE_REACTIONLIST THEN reactionLists.add(newObj)
+      IF type=TYPE_SCREEN THEN objectList.setItem(ROOT_SCREEN_ITEM,newObj)
+      IF type=TYPE_REXX THEN objectList.setItem(ROOT_REXX_ITEM,newObj)
+      IF type=TYPE_REQUESTER THEN objectList.setItem(ROOT_REQUESTER_ITEM,newObj)
+      IF type=TYPE_WINDOW
+        IF objectList.item(ROOT_WINDOW_ITEM)=0
+          objectList.setItem(ROOT_WINDOW_ITEM,newObj)
+        ELSE
+          objectList.add(newObj)  ->extra window
+          objectList.add(0) ->extra menu
+          objectList.add(0) ->extra layout
+        ENDIF
+      ENDIF
+      IF type=TYPE_MENU THEN objectList.setItem(objectList.count()-2,newObj)
+      IF (type=TYPE_LAYOUT) AND (objectList.item(objectList.count()-1)=0) THEN objectList.setItem(objectList.count()-1,newObj)
+
+      IF newObj THEN newObj.deserialise(fs)
+      IF newObj.id=selid THEN selcomp:=newObj
+      
+      loadObjectList.add(newObj)
+    ENDIF
+  ENDWHILE
+
+  //original v1 files did not include requester
+  IF objectList.item(ROOT_REQUESTER_ITEM)=0
+    newObj:=createRequesterObject(0)
+    newObj.id:=newid++
+    objectList.setItem(ROOT_REQUESTER_ITEM,newObj)
+  ENDIF
+
+  FOR i:=0 TO loadObjectList.count()-1
+    newObj:=loadObjectList.item(i)
+    IF newObj.tempParentId=-1
+      newObj.parent:=0
+    ENDIF
+  ENDFOR
+
+  processObjects(objectList.item(ROOT_REQUESTER_ITEM),loadObjectList)
+  i:=ROOT_LAYOUT_ITEM
+  WHILE i<objectList.count()
+    processObjects(objectList.item(i),loadObjectList)
+    i+=3
+  ENDWHILE
+  makeList(selcomp)
+
+  i:=ROOT_WINDOW_ITEM
+  WHILE i<objectList.count()
+    tmpObj:=objectList.item(i)
+    tmpObj.createPreviewObject(win.wscreen)
+    tmpObj:=objectList.item(i+ROOT_MENU_ITEM-ROOT_WINDOW_ITEM)
+    tmpObj.createPreviewObject(win.wscreen)
+    addMembers(objectList.item(i+ROOT_LAYOUT_ITEM-ROOT_WINDOW_ITEM),objectList.item(i))
+    i+=3
+  ENDWHILE
+  remakePreviewMenus()
+  objectInitialise(newid)
+EXCEPT DO
+  END loadObjectList 
+  ReThrow()
+ENDPROC
+
+PROC loadFile(loadfilename:PTR TO CHAR) HANDLE
+  DEF fs=0:PTR TO fileStreamer
 
   DEF tags
   DEF fr:PTR TO filerequester
@@ -1522,193 +1994,56 @@ PROC loadFile(loadfilename:PTR TO CHAR) HANDLE
     RETURN
   ENDIF
   
-  fs.readLine(tempStr)
-  IF StrCmp(tempStr,'-REBUILD-')=FALSE
-    errorRequest(mainWindow,'Error','This file is not a valid rebuild file.')
-    END fs
-    RETURN
+  loadStream(fs)
+  IF systemOptions.previewCode
+    codePreviewForm.show(systemOptions.codePreviewLeft,systemOptions.codePreviewTop,systemOptions.codePreviewWidth,systemOptions.codePreviewHeight)
+  ELSE
+    codePreviewForm.close()
   ENDIF
-
-  fs.readLine(tempStr)
-  WHILE (StrCmp(tempStr,'#')=FALSE)
-    IF StrCmp(tempStr,'VER=',STRLEN)
-      ver:=Val(tempStr+STRLEN)
-      IF (ver<1)
-        errorRequest(mainWindow,'Error','This file is not a valid rebuild file.')
-        END fs
-        RETURN
-      ENDIF
-      IF (ver>FILE_FORMAT_VER)
-        errorRequest(mainWindow,'Error','This file is too new for this version of ReBuild.')
-        END fs
-        RETURN
-      ENDIF
-    ELSEIF StrCmp(tempStr,'NEXTID=',STRLEN)
-      newid:=Val(tempStr+STRLEN)
-      IF newid<1
-        errorRequest(mainWindow,'Error','This file is not a valid rebuild file.')
-        END fs
-        RETURN
-      ENDIF
-    ELSEIF StrCmp(tempStr,'VIEWTMP=',STRLEN)
-      v:=Val(tempStr+STRLEN)
-      IF Eor((v=TRUE),(bufferLayout<>0))
-        toggleBuffer()
-      ENDIF
-    ELSEIF StrCmp(tempStr,'ADDSETT=',STRLEN)
-      v:=Val(tempStr+STRLEN)
-      IF win
-        a:=ItemAddress(win.menustrip,menuCode(MENU_EDIT,MENU_EDIT_SHOW_ADD_SETTINGS,0))
-        IF a
-          IF v
-            a.flags:=a.flags OR CHECKED
-            systemOptions.showSettingsOnAdd:=TRUE
-          ELSE
-            a.flags:=a.flags AND Not(CHECKED)
-            systemOptions.showSettingsOnAdd:=FALSE
-          ENDIF
-        ENDIF
-      ENDIF
-    ELSEIF StrCmp(tempStr,'LANGID=',STRLEN)
-      v:=Val(tempStr+STRLEN)
-      codeOptions.langid:=v
-    ELSEIF StrCmp(tempStr,'USEIDS=',STRLEN)
-      v:=Val(tempStr+STRLEN)
-      codeOptions.useids:=IF v THEN TRUE ELSE FALSE
-    ELSEIF StrCmp(tempStr,'FULLCODE=',STRLEN)
-      v:=Val(tempStr+STRLEN)
-      codeOptions.fullcode:=IF v THEN TRUE ELSE FALSE
-    ELSEIF StrCmp(tempStr,'CODEFOLDER=',STRLEN)
-      AstrCopy(codeOptions.savePath,tempStr+STRLEN,256)
-    ELSEIF StrCmp(tempStr,'USEMACROS=',STRLEN)
-      v:=Val(tempStr+STRLEN)
-      codeOptions.usemacros:=IF v THEN TRUE ELSE FALSE
-    ENDIF
-
-    IF fs.readLine(tempStr)=FALSE
-      errorRequest(mainWindow,'Error','This file is not a valid rebuild file.')
-      END fs
-      RETURN
-    ENDIF
-  ENDWHILE
   
-  i:=ROOT_WINDOW_ITEM
-  WHILE i<objectList.count()
-    removeMembers(objectList.item(i+ROOT_LAYOUT_ITEM-ROOT_WINDOW_ITEM),objectList.item(i))
-    i+=3
-  ENDWHILE
-  disposeObjects()
-  objectInitialise()
-
-  objectList.add(0)  ->Application begin
-  objectList.add(0)  ->Rexx
-  objectList.add(0)  ->Requester
-  objectList.add(0)  ->Screen
-  objectList.add(0)  ->Window
-  objectList.add(0)  ->Menu
-  objectList.add(0)  ->Layout
-
-  NEW loadObjectList.stdlist(100)
-
-  reactionLists:=getReactionLists()
-
-  WHILE (fs.readLine(tempStr))
-    IF StrCmp('TYPE: ',tempStr,6)
-      type:=Val(tempStr+6)
-      newObj:=createObjectByType(type,0)
-      IF type=TYPE_REACTIONLIST THEN reactionLists.add(newObj)
-      IF type=TYPE_SCREEN THEN objectList.setItem(ROOT_SCREEN_ITEM,newObj)
-      IF type=TYPE_REXX THEN objectList.setItem(ROOT_REXX_ITEM,newObj)
-      IF type=TYPE_REQUESTER THEN objectList.setItem(ROOT_REQUESTER_ITEM,newObj)
-      IF type=TYPE_WINDOW
-        IF objectList.item(ROOT_WINDOW_ITEM)=0
-          objectList.setItem(ROOT_WINDOW_ITEM,newObj)
-        ELSE
-          objectList.add(newObj)  ->extra window
-          objectList.add(0) ->extra menu
-          objectList.add(0) ->extra layout
-        ENDIF
-      ENDIF
-      IF type=TYPE_MENU THEN objectList.setItem(objectList.count()-2,newObj)
-      IF (type=TYPE_LAYOUT) AND (objectList.item(objectList.count()-1)=0) THEN objectList.setItem(objectList.count()-1,newObj)
-
-      IF newObj THEN newObj.deserialise(fs)
-      loadObjectList.add(newObj)
-    ENDIF
-  ENDWHILE
-
-  //original v1 files did not include requester
-  IF objectList.item(ROOT_REQUESTER_ITEM)=0
-    newObj:=createRequesterObject(0)
-    newObj.id:=newid++
-    objectList.setItem(ROOT_REQUESTER_ITEM,newObj)
-  ENDIF
-
-  FOR i:=0 TO loadObjectList.count()-1
-    newObj:=loadObjectList.item(i)
-    IF newObj.tempParentId=-1
-      newObj.parent:=0
-    ENDIF
-  ENDFOR
-
-  i:=ROOT_LAYOUT_ITEM
-  WHILE i<objectList.count()
-    processObjects(objectList.item(i),loadObjectList)
-    i+=3
-  ENDWHILE
-  makeList()
-
-  i:=ROOT_WINDOW_ITEM
-  WHILE i<objectList.count()
-    tmpObj:=objectList.item(i)
-    tmpObj.createPreviewObject(win.wscreen)
-    tmpObj:=objectList.item(i+ROOT_MENU_ITEM-ROOT_WINDOW_ITEM)
-    tmpObj.createPreviewObject(win.wscreen)
-    addMembers(objectList.item(i+ROOT_LAYOUT_ITEM-ROOT_WINDOW_ITEM),objectList.item(i))
-    i+=3
-  ENDWHILE
-  addRecent(filename)
-  remakePreviewMenus()
- 
   changes:=FALSE
-  
-  objectInitialise(newid)
+  addRecent(filename)
+  clearUndo()
+  addUndo()
+  genCodePreview()
 EXCEPT DO
-  END loadObjectList
+  SELECT exceptioninfo
+    CASE "INVF"
+      errorRequest(mainWindow,'Error','This file is not a valid rebuild file.')
+    CASE "VERS"
+      errorRequest(mainWindow,'Error','This file is too new for this version of ReBuild.')     
+  ENDSELECT
+
   END fs
 ENDPROC
 
-PROC saveFile() HANDLE
-  DEF fs=0:PTR TO fileStreamer
-  DEF i,j
+PROC saveStream(fs:PTR TO baseStreamer)
+  DEF i,j,flags
   DEF comp:PTR TO reactionObject
   DEF tempStr[300]:STRING
   DEF reactionLists:PTR TO stdlist
-  DEF oldtool
-  DEF dobj:PTR TO diskobject
-  DEF lock
-
-  IF EstrLen(filename)=0 
-    RETURN saveFileAs()
-  ENDIF
-
-  NEW fs.create(filename,MODE_NEWFILE)
-  IF fs.isOpen()=FALSE
-    errorRequest(mainWindow,'Error','This file could not be opened.')
-    END fs
-    RETURN
-  ENDIF
-
-  setBusy()
-
   fs.writeLine('-REBUILD-')
   StringF(tempStr,'VER=\d',FILE_FORMAT_VER)
   fs.writeLine(tempStr)
-  StringF(tempStr,'NEXTID=\d',getObjId())
+  StringF(tempStr,'NEXTID=\d',currObjId())
   fs.writeLine(tempStr)
+  IF selectedComp
+    StringF(tempStr,'SELECTEDID=\d',selectedComp.id)
+    fs.writeLine(tempStr)
+  ENDIF
   StringF(tempStr,'VIEWTMP=\d',IF bufferLayout THEN TRUE ELSE FALSE)
   fs.writeLine(tempStr)
-  StringF(tempStr,'ADDSETT=\d',IF systemOptions.showSettingsOnAdd AND CHECKED THEN TRUE ELSE FALSE)
+  StringF(tempStr,'ADDSETT=\d',IF systemOptions.showSettingsOnAdd THEN TRUE ELSE FALSE)
+  fs.writeLine(tempStr)
+  StringF(tempStr,'PREVIEWCODE=\d',IF systemOptions.previewCode THEN TRUE ELSE FALSE)
+  fs.writeLine(tempStr)
+  StringF(tempStr,'CODEWINLEFT=\d',systemOptions.codePreviewLeft)
+  fs.writeLine(tempStr)
+  StringF(tempStr,'CODEWINTOP=\d',systemOptions.codePreviewTop)
+  fs.writeLine(tempStr)
+  StringF(tempStr,'CODEWINWIDTH=\d',systemOptions.codePreviewWidth)
+  fs.writeLine(tempStr)
+  StringF(tempStr,'CODEWINHEIGHT=\d',systemOptions.codePreviewHeight)
   fs.writeLine(tempStr)
   StringF(tempStr,'LANGID=\d',codeOptions.langid)
   fs.writeLine(tempStr)
@@ -1734,6 +2069,29 @@ PROC saveFile() HANDLE
       comp.serialise(fs)
     ENDIF
   ENDFOR
+ENDPROC
+
+PROC saveFile() HANDLE
+  DEF fs=0:PTR TO fileStreamer
+  DEF oldtool
+  DEF tempStr[300]:STRING
+  DEF dobj:PTR TO diskobject
+  DEF lock
+
+  IF EstrLen(filename)=0 
+    RETURN saveFileAs()
+  ENDIF
+
+  NEW fs.create(filename,MODE_NEWFILE)
+  IF fs.isOpen()=FALSE
+    errorRequest(mainWindow,'Error','This file could not be opened.')
+    END fs
+    RETURN
+  ENDIF
+
+  setBusy()
+
+  saveStream(fs)
   
   IF systemOptions.saveProjectIcons
     dobj:=GetDefDiskObject(WBPROJECT)
@@ -1879,6 +2237,7 @@ ENDPROC
 PROC doAddWindow()
   DEF newwin:PTR TO windowObject
 
+  updateUndo()
   newwin:=createWindowObject(0)
   IF newwin
     setBusy()
@@ -1899,6 +2258,8 @@ PROC doAddWindow()
       RA_OpenWindow(newwin.previewObject)
       remakePreviewMenus()
       changes:=TRUE
+      addUndo()
+      genCodePreview()
     ENDIF
     clearBusy()
   ENDIF
@@ -1918,6 +2279,7 @@ PROC doAddLayoutQuick(comp:PTR TO reactionObject, horiz)
     IF comp THEN allowchildren:=((comp.allowChildren()=TRUE) OR ((comp.allowChildren()>0) AND (comp.children.count()<comp.allowChildren())))
   ENDWHILE
   IF comp AND allowchildren
+    updateUndo()
     newObj:=createLayoutObject(comp)
     IF newObj 
       IF horiz
@@ -1930,6 +2292,8 @@ PROC doAddLayoutQuick(comp:PTR TO reactionObject, horiz)
       
       addObject(comp,newObj,IF comp=selectedComp THEN -1 ELSE selectedComp.getChildIndex()+1)
     ENDIF
+    addUndo()
+    genCodePreview()
   ENDIF
 ENDPROC newObj
 
@@ -1991,6 +2355,7 @@ PROC doAddComp(comp:PTR TO reactionObject, objType)
         ENDIF
       ENDIF
       IF newObj
+        updateUndo()
         IF (comp.type=TYPE_VIRTUAL) AND (newObj.isImage())
           layoutObj:=createLayoutObject(comp)
           addObject(comp,layoutObj)
@@ -1999,6 +2364,8 @@ PROC doAddComp(comp:PTR TO reactionObject, objType)
         changes:=TRUE
         
         addObject(comp,newObj,IF comp=selectedComp THEN -1 ELSE selectedComp.getChildIndex()+1)
+        addUndo()
+        genCodePreview()
       ENDIF
       clearBusy()
     ENDIF
@@ -2013,6 +2380,11 @@ PROC doAdd()
   comp:=selectedComp
   IF (comp.type=TYPE_SCREEN) OR (comp.type=TYPE_WINDOW)
     doAddWindow()
+    RETURN
+  ENDIF
+
+  IF (comp.type=TYPE_REQUESTER) OR (comp.type=TYPE_REQUESTER_ITEM)
+    doAddComp(comp,TYPE_REQUESTER_ITEM)
     RETURN
   ENDIF
 
@@ -2031,6 +2403,7 @@ PROC doEdit()
   DEF pwin
   IF selectedComp
     setBusy()
+    updateUndo()
     IF selectedComp.editSettings()
       changes:=TRUE
       idx:=findWindowIndex(selectedComp)
@@ -2053,6 +2426,8 @@ PROC doEdit()
         ENDIF
         rethinkPreviews()
       ENDIF
+      addUndo()
+      genCodePreview()
     ENDIF
     clearBusy()
 
@@ -2062,19 +2437,28 @@ ENDPROC
 PROC doDelete()
   IF selectedComp.type=TYPE_WINDOW
     IF warnRequest(mainWindow,'Warning','Are you sure you wish\nto delete this whole window?',TRUE)=1
+      updateUndo()
       changes:=TRUE
       removeWindow(selectedComp)
+      addUndo()
+      genCodePreview()
     ENDIF
   ELSE
     IF selectedComp.children.count()>0
       IF (warnRequest(mainWindow,'Warning','Are you sure you wish\nto delete this item and all of its children?',TRUE)=1)
+        updateUndo()
         changes:=TRUE
         removeObject(selectedComp)
+        addUndo()
+        genCodePreview()
       ENDIF
     ELSE
       IF (systemOptions.warnOnDelete=FALSE) ORELSE (warnRequest(mainWindow,'Warning','Are you sure you wish\nto delete this item?',TRUE)=1)
+        updateUndo()
         changes:=TRUE
         removeObject(selectedComp)
+        addUndo()
+        genCodePreview()
       ENDIF
     ENDIF
   ENDIF
@@ -2139,10 +2523,13 @@ PROC doMoveToBuffer(comp:PTR TO reactionObject)
   IF comp.children.count()>0
     IF warnRequest(mainWindow,'Warning','This will move this and all child items into the buffer.\nDo you wish to continue?',TRUE)=0 THEN RETURN
   ENDIF
+  updateUndo()
   changes:=TRUE
 
   copyToBuffer(comp,TRUE)
   removeObject(comp)
+  addUndo()
+  genCodePreview()
 ENDPROC
 
 PROC copyFromBuffer(bufferComp:PTR TO reactionObject)
@@ -2160,6 +2547,7 @@ PROC copyFromBuffer(bufferComp:PTR TO reactionObject)
     RETURN
   ENDIF
 
+  updateUndo()
   bufferComp.serialise(fs)
   END fs
   
@@ -2201,13 +2589,18 @@ PROC copyFromBuffer(bufferComp:PTR TO reactionObject)
   ENDIF
   DeleteFile('t:tempcomp')
   changes:=TRUE
+  addUndo()
+  genCodePreview()
 ENDPROC
 
 PROC moveFromBuffer(bufferComp:PTR TO reactionObject)
   DEF i
+  updateUndo()
   copyFromBuffer(bufferComp)
   removeBufferItem(bufferComp)
   changes:=TRUE
+  addUndo()
+  genCodePreview()
 ENDPROC
 
 PROC removeBufferItem(bufferComp:PTR TO reactionObject)
@@ -2308,7 +2701,7 @@ PROC newProject()
   objectList.add(createWindowObject(0))  ->Window
   objectList.add(createMenuObject(0))  ->Menu
   objectList.add(createLayoutObject(0))  ->Layout
-  makeList()
+  makeList(objectList.item(ROOT_LAYOUT_ITEM))
 
   i:=ROOT_WINDOW_ITEM
   WHILE i<objectList.count()
@@ -2318,6 +2711,9 @@ PROC newProject()
   rethinkPreviews()
   remakePreviewMenus()
   changes:=FALSE
+  clearUndo()
+  addUndo()
+  genCodePreview()
 ENDPROC
 
 PROC updateSettings()
@@ -2341,6 +2737,11 @@ PROC updateSettings()
     a:=ItemAddress(win.menustrip,menuCode(MENU_EDIT,MENU_EDIT_BUFFER,0))
     IF a
       systemOptions.showBuffer:=IF (a.flags AND CHECKED) THEN TRUE ELSE FALSE
+    ENDIF
+
+    a:=ItemAddress(win.menustrip,menuCode(MENU_EDIT,MENU_EDIT_PREVIEWCODE,0))
+    IF a
+      systemOptions.previewCode:=IF (a.flags AND CHECKED) THEN TRUE ELSE FALSE
     ENDIF
   ENDIF
 
@@ -2377,23 +2778,41 @@ PROC togglePreview(subitem)
   pwin:=Gets(previewWin,WINDOW_WINDOW)
   IF pwin
     winObj.previewOpen:=FALSE
-    winObj.previewLeft:=Gets(previewWin,WA_LEFT)
-    winObj.previewTop:=Gets(previewWin,WA_TOP)
     RA_CloseWindow(previewWin)
   ELSE
     winObj.previewOpen:=TRUE
-    Sets(previewWin,WA_LEFT,winObj.previewLeft)
-    Sets(previewWin,WA_TOP,winObj.previewTop)
     menu:=objectList.item(idx-ROOT_WINDOW_ITEM+ROOT_MENU_ITEM)::menuObject.previewObject
     pwin:=RA_OpenWindow(previewWin)
     IF menu THEN SetMenuStrip(pwin,menu) ELSE ClearMenuStrip(pwin)
   ENDIF
 ENDPROC
 
+PROC handleCodePreviewInputs()
+  DEF result,tmp,code
+  DEF a:PTR TO menuitem
+  
+  WHILE ((result:=RA_HandleInput(codePreviewForm.windowObj,{code}+2)) <> WMHI_LASTMSG)
+    tmp:=(result AND WMHI_CLASSMASK)
+    SELECT tmp
+      CASE WMHI_CHANGEWINDOW
+        systemOptions.codePreviewLeft:=Gets(codePreviewForm.windowObj,WA_LEFT)
+        systemOptions.codePreviewTop:=Gets(codePreviewForm.windowObj,WA_TOP)
+        systemOptions.codePreviewWidth:=Gets(codePreviewForm.windowObj,WA_INNERWIDTH)
+        systemOptions.codePreviewHeight:=Gets(codePreviewForm.windowObj,WA_INNERHEIGHT)
+      CASE WMHI_CLOSEWINDOW
+        a:=ItemAddress(win.menustrip,menuCode(MENU_EDIT,MENU_EDIT_PREVIEWCODE,0))
+        a.flags:=a.flags AND Not(CHECKED)
+        systemOptions.previewCode:=FALSE
+        codePreviewForm.close()
+        ActivateWindow(win)
+    ENDSELECT
+  ENDWHILE
+ENDPROC
+
 PROC handlePreviewInputs()
   DEF pwin:PTR TO window,previewWin,i,code=0
   DEF winObj:PTR TO windowObject
-  DEF result,tmp
+  DEF result,tmp,newval
   
   i:=ROOT_WINDOW_ITEM
   WHILE (i<objectList.count())
@@ -2404,9 +2823,23 @@ PROC handlePreviewInputs()
       tmp:=(result AND WMHI_CLASSMASK)
       SELECT tmp
         CASE WMHI_CHANGEWINDOW
-          winObj.previewLeft:=Gets(previewWin,WA_LEFT)
-          winObj.previewTop:=Gets(previewWin,WA_TOP)
+          newval:=Gets(previewWin,WA_LEFT)
+          winObj.previewLeft:=IF winObj.leftEdge<>newval THEN newval ELSE -1
+          newval:=Gets(previewWin,WA_TOP)
+          winObj.previewTop:=IF winObj.topEdge<>newval THEN newval ELSE -1
+          newval:=Gets(previewWin,WA_INNERWIDTH)
+          winObj.previewWidth:=IF winObj.width<>newval THEN newval ELSE -1
+          newval:=Gets(previewWin,WA_INNERHEIGHT)
+          winObj.previewHeight:=IF winObj.height<>newval THEN newval ELSE -1
         CASE WMHI_CLOSEWINDOW
+          newval:=Gets(previewWin,WA_LEFT)
+          winObj.previewLeft:=IF winObj.leftEdge<>newval THEN newval ELSE -1
+          newval:=Gets(previewWin,WA_TOP)
+          winObj.previewTop:=IF winObj.topEdge<>newval THEN newval ELSE -1
+          newval:=Gets(previewWin,WA_INNERWIDTH)
+          winObj.previewWidth:=IF winObj.width<>newval THEN newval ELSE -1
+          newval:=Gets(previewWin,WA_INNERHEIGHT)
+          winObj.previewHeight:=IF winObj.height<>newval THEN newval ELSE -1
           winObj.previewOpen:=FALSE
           RA_CloseWindow(previewWin)
           remakePreviewMenus()
@@ -2450,7 +2883,8 @@ PROC remakePreviewMenus()
   NM_SUB,IF recentFiles.count()>3 THEN recentFiles.item(3) ELSE 0,0,0,0,
   NM_SUB,IF recentFiles.count()>4 THEN recentFiles.item(4) ELSE 0,0,0,0,
   NM_ITEM,NM_BARLABEL,0,0,0,
-  NM_ITEM,'Generate Code',0,0,'C',
+  NM_ITEM,'Code Options',0,0,'C',
+  NM_ITEM,'Save Code',0,MIF_SHIFTCOMMSEQ,'C',
   NM_ITEM,NM_BARLABEL,0,0,0,
   NM_ITEM,'Show Libraries',0,0,0,
   NM_ITEM,NM_BARLABEL,0,0,0,
@@ -2458,6 +2892,9 @@ PROC remakePreviewMenus()
   NM_ITEM,NM_BARLABEL,0,0,0,
   NM_ITEM,'Quit',0,0,'Q',
   NM_TITLE,'Edit',0,0,0,
+  NM_ITEM,'Undo',0,0,'Z',
+  NM_ITEM,'Redo',0,MIF_SHIFTCOMMSEQ,'Z',
+  NM_ITEM,NM_BARLABEL,0,0,0,
   NM_ITEM,'Add Gadget',-1,0,0,
   NM_SUB,'Button',TYPE_BUTTON,0,0,
   NM_SUB,'CheckBox',TYPE_CHECKBOX,0,0,
@@ -2520,6 +2957,7 @@ PROC remakePreviewMenus()
   NM_ITEM,'Show Settings On Add',0,(CHECKIT OR (IF systemOptions.showSettingsOnAdd THEN CHECKED ELSE 0 ) OR MENUTOGGLE),0,
   NM_ITEM,'Warn On Delete',0,(CHECKIT OR (IF systemOptions.warnOnDelete THEN CHECKED ELSE 0 ) OR MENUTOGGLE),0,
   NM_ITEM,'Save Project Icons',0,(CHECKIT OR (IF systemOptions.saveProjectIcons THEN CHECKED ELSE 0 ) OR MENUTOGGLE),0,
+  NM_ITEM,'Code Preview Window',0,(CHECKIT OR (IF systemOptions.previewCode THEN CHECKED ELSE 0 ) OR MENUTOGGLE),0,
   NM_ITEM,NM_BARLABEL,0,0,0,
   NM_ITEM,'Preview Windows',0,0,0
   ]
@@ -2573,7 +3011,7 @@ PROC makeHintList(comp:PTR TO reactionObject, hintGadIds:PTR TO stdlist, hintTex
   IF comp.hintText.count()
     tempText:=comp.hintText.makeTextString()
     hintTexts.add(tempText)
-    Dispose(tempText)
+    DisposeLink(tempText)
     hintGadIds.add(comp.id)
   ENDIF
   
@@ -2667,15 +3105,22 @@ ENDPROC
 PROC restorePreviews()
   DEF previewWin,i
   DEF winObj:PTR TO windowObject
-  DEF pwin,menu
+  DEF pwin,menu,left,top,width,height
   
   i:=ROOT_WINDOW_ITEM
   WHILE (i<objectList.count())
     winObj:=objectList.item(i)
     previewWin:=winObj.previewObject
-    IF winObj.previewOpen
-      Sets(previewWin,WA_LEFT,winObj.previewLeft)
-      Sets(previewWin,WA_TOP,winObj.previewTop)
+    IF winObj.previewOpen     
+      left:=IF winObj.previewLeft=-1 THEN winObj.leftEdge ELSE winObj.previewLeft
+      top:=IF winObj.previewTop=-1 THEN winObj.topEdge ELSE winObj.previewTop
+      width:=IF winObj.previewWidth=-1 THEN winObj.width ELSE winObj.previewWidth
+      height:=IF winObj.previewHeight=-1 THEN winObj.height ELSE winObj.previewHeight
+
+      Sets(previewWin,WA_LEFT,left)
+      Sets(previewWin,WA_TOP,top)
+      Sets(previewWin,WA_WIDTH,width)
+      Sets(previewWin,WA_HEIGHT,height)
       menu:=objectList.item(i-ROOT_WINDOW_ITEM+ROOT_MENU_ITEM)::menuObject.previewObject
       pwin:=RA_OpenWindow(previewWin)
       IF menu THEN SetMenuStrip(pwin,menu) ELSE ClearMenuStrip(pwin)
@@ -2691,11 +3136,14 @@ PROC editLists()
   DEF idx,mainRootLayout, window
   
   setBusy()
+  updateUndo()
   NEW listManagerForm.create()
   listManagerForm.manageLists()
   changes:=TRUE
   END listManagerForm
   clearBusy()
+  addUndo()
+  genCodePreview()
   
   idx:=ROOT_WINDOW_ITEM
   WHILE idx<objectList.count()
@@ -2798,6 +3246,8 @@ PROC createObjectByType(objType,comp)
       newObj:=createTabsObject(comp)
     CASE TYPE_REQUESTER
       newObj:=createRequesterObject(comp)
+    CASE TYPE_REQUESTER_ITEM
+      newObj:=createRequesterItemObject(comp)
     DEFAULT
       Raise("OBJ")
   ENDSELECT
@@ -2806,6 +3256,9 @@ ENDPROC newObj
 PROC getAllWindowSigs()
   DEF wsig,wsig2,i
   GetAttr( WINDOW_SIGMASK, mainWindow, {wsig} )
+  GetAttr( WINDOW_SIGMASK, codePreviewForm.windowObj, {wsig2} )
+  wsig:=wsig OR wsig2
+
   i:=ROOT_WINDOW_ITEM
   WHILE i<objectList.count()
     GetAttr( WINDOW_SIGMASK, objectList.item(i)::windowObject.previewObject, {wsig2} )
@@ -2813,6 +3266,101 @@ PROC getAllWindowSigs()
     i+=3
   ENDWHILE
 ENDPROC wsig
+
+PROC doUndo() HANDLE
+  DEF strStream:PTR TO stringStreamer
+  IF undoPos>0
+    undoPos-- 
+    strStream:=undoData.item(undoPos)
+  ENDIF
+  strStream.reset()
+  closePreviews()
+  loadStream(strStream)
+  restorePreviews()
+  genCodePreview()
+EXCEPT
+ENDPROC
+
+PROC doRedo() HANDLE
+  DEF strStream:PTR TO stringStreamer
+  IF undoPos<(undoData.count()-1)
+    undoPos++
+    strStream:=undoData.item(undoPos)
+  ENDIF
+  strStream.reset()
+  closePreviews()
+  loadStream(strStream)
+  restorePreviews()
+  genCodePreview()
+EXCEPT
+ENDPROC
+
+PROC clearUndo()
+  DEF strStream:PTR TO stringStreamer
+  DEF i
+  FOR i:=0 TO undoData.count()-1
+    strStream:=undoData.item(i)
+    END strStream
+  ENDFOR
+  undoData.clear()
+  undoPos:=-1
+ENDPROC
+
+PROC updateUndo()
+  DEF strStream:PTR TO stringStreamer
+  IF undoData.count()>0
+    strStream:=undoData.item(undoData.count()-1)
+    strStream.clear()
+    saveStream(strStream)
+  ENDIF
+ENDPROC
+
+PROC getUndoDatasize()
+  DEF r=0,i,j
+  DEF strStream:PTR TO stringStreamer
+
+  FOR i:=0 TO undoData.count()-1
+    strStream:=undoData.item(i)
+    r:=r+strStream.getSize()
+  ENDFOR
+ENDPROC
+
+PROC addUndo()
+  DEF strStream:PTR TO stringStreamer
+  DEF prevStream:PTR TO stringStreamer
+  DEF doAdd=FALSE,i
+  WHILE undoPos<(undoData.count()-1)
+    strStream:=undoData.item(undoData.count()-1)
+    END strStream
+    undoData.remove(undoData.count()-1)
+  ENDWHILE
+ 
+  WHILE (getUndoDatasize()>(Div(AvailMem(0),4)) AND (undoData.count()>5)) OR (undoData.count()>MAX_UNDO_COUNT)
+    strStream:=undoData.item(0)
+    END strStream
+    undoData.remove(0)
+  ENDWHILE
+  
+  NEW strStream.create()
+  saveStream(strStream)
+  
+  IF (undoData.count()=0) 
+    doAdd:=TRUE
+  ELSE
+    prevStream:=undoData.item(undoData.count()-1)
+    IF prevStream.compareTo(strStream)=FALSE THEN doAdd:=TRUE
+  ENDIF
+
+  IF doAdd
+    undoData.add(strStream)
+    undoPos++
+  ELSE
+    END strStream
+  ENDIF
+ 
+  menuDisable(win,MENU_EDIT,MENU_EDIT_UNDO,0,undoPos=0)
+  menuDisable(win,MENU_EDIT,MENU_EDIT_REDO,0,undoPos>=(undoData.count()-1))
+ENDPROC
 
 PROC main() HANDLE
   DEF running=TRUE
@@ -2825,9 +3373,12 @@ PROC main() HANDLE
   DEF reactionList:PTR TO reactionListObject
   DEF i
   DEF item,type
+  DEF a:PTR TO menuitem
+  DEF scr:PTR TO screen
 
   DEF hintInfo:PTR TO hintinfo
-  
+  DEF strStream:stringStreamer
+
   openClasses()
   initialise()
   NEW objectList.stdlist(20)
@@ -2837,6 +3388,8 @@ PROC main() HANDLE
   NEW recentFiles.stringlist(5)
   loadRecent()
 
+  NEW undoData.stdlist(MAX_UNDO_COUNT)
+ 
   hintInfo:=New(SIZEOF hintinfo*17)
   hintInfo[0].gadgetid:=GAD_ADD
   hintInfo[0].code:=-1
@@ -2928,21 +3481,37 @@ PROC main() HANDLE
   systemOptions.warnOnDelete:=TRUE
   systemOptions.showBuffer:=TRUE
   systemOptions.saveProjectIcons:=FALSE
+  systemOptions.previewCode:=TRUE
   systemOptions.windowLeft:=-1
   systemOptions.windowTop:=-1
   systemOptions.windowWidth:=-1
   systemOptions.windowHeight:=-1
   
+  scr:=LockPubScreen(0)
+  IF scr
+    tmp:=scr.width-350
+    IF tmp<0 THEN tmp:=0
+  ENDIF
+  UnlockPubScreen(0,scr)
+  systemOptions.codePreviewLeft:=tmp
+  systemOptions.codePreviewTop:=20
+  systemOptions.codePreviewWidth:=350
+  systemOptions.codePreviewHeight:=120
   AstrCopy(systemOptions.savePath,'')
   
+  loadSettings()
   loadIconPrefs()
+  NEW codePreviewForm.create()
+  IF systemOptions.previewCode THEN codePreviewForm.show(systemOptions.codePreviewLeft,systemOptions.codePreviewTop,systemOptions.codePreviewWidth,systemOptions.codePreviewHeight)
+
   createForm()
   Sets(mainWindow,WINDOW_HINTINFO,hintInfo)
   Sets(mainWindow,WINDOW_GADGETHELP, TRUE)
-  
+
   IF (win:=RA_OpenWindow(mainWindow))
-    IF systemOptions.showBuffer=FALSE THEN toggleBuffer()
+
     SetMenuStrip(win,menus)
+    IF systemOptions.showBuffer=FALSE THEN toggleBuffer()
     newProject()
     openPreviews()
     updateBufferSel(win,0)
@@ -2952,6 +3521,7 @@ PROC main() HANDLE
     WHILE running
       wsig:=getAllWindowSigs()
       sig:=Wait(wsig)
+      handleCodePreviewInputs()
       handlePreviewInputs()
       IF (sig AND (wsig))
         WHILE ((result:=RA_HandleInput(mainWindow,{code}+2)) <> WMHI_LASTMSG)
@@ -2974,7 +3544,9 @@ PROC main() HANDLE
                       saveFileAs()
                     CASE MENU_PROJECT_REOPEN  ->Reopen file
                       doLoad(recentFiles.item(subitem))
-                    CASE MENU_PROJECT_GENCODE ->Generate Code
+                    CASE MENU_PROJECT_CODEOPTIONS ->Generate Code
+                      editCodeOptions()
+                    CASE MENU_PROJECT_SAVECODE ->
                       genCode()
                     CASE MENU_PROJECT_SHOWLIBS
                       showLibs()
@@ -2985,6 +3557,10 @@ PROC main() HANDLE
                   ENDSELECT
                 CASE MENU_EDIT
                   SELECT menuitem
+                    CASE MENU_EDIT_UNDO
+                      doUndo()
+                    CASE MENU_EDIT_REDO
+                      doRedo()
                     CASE MENU_EDIT_ADD_GADGET  ->Add
                       item:=ItemAddress(win.menustrip,result)
                       type:=GTMENUITEM_USERDATA(item)
@@ -3033,6 +3609,15 @@ PROC main() HANDLE
                     CASE MENU_EDIT_BUFFER
                       toggleBuffer()
                       updateSettings()
+                    CASE MENU_EDIT_PREVIEWCODE
+                      updateSettings()
+                      a:=ItemAddress(win.menustrip,menuCode(MENU_EDIT,MENU_EDIT_PREVIEWCODE,0))
+                      IF a.flags AND CHECKED 
+                        codePreviewForm.show(systemOptions.codePreviewLeft,systemOptions.codePreviewTop,systemOptions.codePreviewWidth,systemOptions.codePreviewHeight)
+                        genCodePreview()
+                      ELSE       
+                        codePreviewForm.close()
+                      ENDIF
                     CASE MENU_EDIT_PREVIEW
                       togglePreview(subitem)
                   ENDSELECT
@@ -3064,7 +3649,7 @@ PROC main() HANDLE
                 CASE GAD_LISTS  ->Lists
                   editLists()
                 CASE GAD_CODE  ->Code
-                  genCode()
+                  editCodeOptions()
                 CASE GAD_LOAD  ->Load
                   doLoad()
                 CASE GAD_SAVE  ->Save
@@ -3092,6 +3677,11 @@ PROC main() HANDLE
                 restorePreviews()
                 GetAttr( WINDOW_SIGMASK, mainWindow, {wsig} )
               ENDIF
+            CASE WMHI_CHANGEWINDOW
+              systemOptions.windowLeft:=Gets(mainWindow,WA_LEFT)
+              systemOptions.windowTop:=Gets(mainWindow,WA_TOP)
+              systemOptions.windowWidth:=Gets(mainWindow,WA_INNERWIDTH)
+              systemOptions.windowHeight:=Gets(mainWindow,WA_INNERHEIGHT)
             CASE WMHI_CLOSEWINDOW
               IF doClose() THEN running:=FALSE
           ENDSELECT
@@ -3147,7 +3737,7 @@ EXCEPT DO
         CASE "fuel"
           errorRequest(0,'Error','Unable to open fuelgauge.gadget')
         CASE "text"
-          errorRequest(0,'Error','Unable to open textfield.gadget')
+          errorRequest(0,'Error','Unable to open textfield.gadget and texteditor.gadget,\nyou must have at least one of these')
         CASE "file"
           errorRequest(0,'Error','Unable to open getfile.gadget')
         CASE "font"
@@ -3175,6 +3765,7 @@ EXCEPT DO
       ENDSELECT
   ENDSELECT
   IF mainWindow THEN RA_CloseWindow(mainWindow)
+  saveSettings()
   win:=0
   closePreviews()
   IF objectList
@@ -3189,6 +3780,15 @@ EXCEPT DO
   IF recentFiles 
     saveRecent()
     END recentFiles
+  ENDIF
+  
+  IF undoData
+    clearUndo()
+    END undoData
+  ENDIF
+  IF codePreviewForm 
+    codePreviewForm.close()
+    END codePreviewForm
   ENDIF
   IF objectList THEN END objectList
   IF bufferList 

@@ -179,6 +179,7 @@ PROC end() OF rexxSettingsForm
   END self.tempCommands
   END self.gadgetList[NUM_REXX_GADS]
   END self.gadgetActions[NUM_REXX_GADS]
+  DisposeObject(self.windowObj)
 ENDPROC
 
 PROC editSettings(comp:PTR TO rexxObject) OF rexxSettingsForm
@@ -362,7 +363,7 @@ PROC editCommands(commands:PTR TO stringlist) OF rexxCommandSettingsForm
   IF res=MR_OK
     commands.clear()
     node:=self.browserlist.head
-    WHILE (node)
+    WHILE (node.succ)
       GetListBrowserNodeAttrsA(node,[LBNCA_TEXT,{strval},TAG_END])
       IF strval
         IF StrLen(strval)
@@ -376,8 +377,9 @@ ENDPROC res=MR_OK
 
 PROC end() OF rexxCommandSettingsForm
   freeBrowserNodes(self.browserlist)
-  END self.gadgetList[NUM_REXX_GADS]
-  END self.gadgetActions[NUM_REXX_GADS]
+  END self.gadgetList[NUM_REXXCMD_GADS]
+  END self.gadgetActions[NUM_REXXCMD_GADS]
+  DisposeObject(self.windowObj)
 ENDPROC
 
 EXPORT PROC create(parent) OF rexxObject

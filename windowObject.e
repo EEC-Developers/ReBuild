@@ -77,6 +77,8 @@ EXPORT OBJECT windowObject OF reactionObject
   previewRootLayout:LONG
   previewLeft:INT
   previewTop:INT
+  previewWidth:INT
+  previewHeight:INT
   previewHintInfo:PTR TO hintinfo
 ENDOBJECT
 
@@ -341,6 +343,7 @@ ENDPROC
 PROC end() OF windowIDCMPSettingsForm
   END self.gadgetList[NUM_WIN_IDCMP_GADS]
   END self.gadgetActions[NUM_WIN_IDCMP_GADS]
+  DisposeObject(self.windowObj)
 ENDPROC
 
 PROC editSettingsIDCMP(idcmpPtr:PTR TO LONG) OF windowIDCMPSettingsForm
@@ -631,6 +634,7 @@ PROC end() OF windowFlagsSettingsForm
 
   END self.gadgetList[NUM_WIN_FLAGS_GADS]
   END self.gadgetActions[NUM_WIN_FLAGS_GADS]
+  DisposeObject(self.windowObj)
 ENDPROC
 
 PROC editSettingsFlags(refreshPtr:PTR TO CHAR, flagsPtr:PTR TO LONG) OF windowFlagsSettingsForm
@@ -1045,6 +1049,7 @@ PROC end() OF windowSettingsForm
 
   END self.gadgetList[NUM_WIN_GADS]
   END self.gadgetActions[NUM_WIN_GADS]
+  DisposeObject(self.windowObj)
 ENDPROC
 
 PROC editSettings(comp:PTR TO windowObject) OF windowSettingsForm
@@ -1104,19 +1109,29 @@ PROC editSettings(comp:PTR TO windowObject) OF windowSettingsForm
     comp.flags:=self.tmpFlags
     comp.idcmp:=self.tmpIDCMP
     
+    comp.previewLeft:=-1
+    comp.previewTop:=-1
+    comp.previewWidth:=-1
+    comp.previewHeight:=-1
   ENDIF
 ENDPROC res=MR_OK
 
 EXPORT PROC createPreviewObject(scr) OF windowObject
+  DEF left,top,width,height
   IF self.previewObject THEN DisposeObject(self.previewObject)
+  
+  left:=IF self.previewLeft=-1 THEN self.leftEdge ELSE self.previewLeft
+  top:=IF self.previewTop=-1 THEN self.topEdge ELSE self.previewTop
+  width:=IF self.previewWidth=-1 THEN self.width ELSE self.previewWidth
+  height:=IF self.previewHeight=-1 THEN self.height ELSE self.previewHeight
   
   self.previewObject:=WindowObject,
     WA_TITLE, self.title,
     IF StrLen(self.screentitle) THEN WA_SCREENTITLE ELSE TAG_IGNORE, self.screentitle,
-    WA_LEFT, self.leftEdge,
-    WA_TOP, self.topEdge,
-    WA_HEIGHT,self.height,
-    WA_WIDTH,self.width,
+    WA_LEFT, left,
+    WA_TOP, top,
+    WA_WIDTH, width,
+    WA_HEIGHT,height,
     WA_MINWIDTH,self.minWidth,
     WA_MAXWIDTH,self.maxWidth,
     WA_MINHEIGHT,self.minHeight,
@@ -1172,7 +1187,7 @@ EXPORT PROC create(parent) OF windowObject
   self.gadgetHelp:=TRUE
   self.refreshType:=0
   self.flags:=WFLG_CLOSEGADGET OR WFLG_DEPTHGADGET OR WFLG_SIZEGADGET OR WFLG_DRAGBAR OR WFLG_ACTIVATE
-  self.idcmp:=IDCMP_GADGETDOWN OR IDCMP_GADGETUP OR IDCMP_CLOSEWINDOW
+  self.idcmp:=IDCMP_GADGETDOWN OR IDCMP_GADGETUP OR IDCMP_CLOSEWINDOW OR IDCMP_NEWSIZE
 
   self.previewHintInfo:=New(SIZEOF hintinfo) 
   self.previewHintInfo.gadgetid:=-1
@@ -1180,11 +1195,13 @@ EXPORT PROC create(parent) OF windowObject
   
   self.appPort:=CreateMsgPort()
   self.previewObject:=0
-  self.createPreviewObject(0)
   self.previewChildAttrs:=0
   self.previewOpen:=TRUE
   self.previewLeft:=-1
   self.previewTop:=-1
+  self.previewWidth:=-1
+  self.previewHeight:=-1
+  self.createPreviewObject(0)
 ENDPROC
 
 PROC end() OF windowObject
@@ -1225,7 +1242,9 @@ EXPORT PROC serialiseData() OF windowObject IS
   makeProp(idcmp,FIELDTYPE_LONG),
   makeProp(previewOpen,FIELDTYPE_CHAR),
   makeProp(previewLeft,FIELDTYPE_INT),
-  makeProp(previewTop,FIELDTYPE_INT)
+  makeProp(previewTop,FIELDTYPE_INT),
+  makeProp(previewWidth,FIELDTYPE_INT),
+  makeProp(previewHeight,FIELDTYPE_INT)
 ]
 
 EXPORT PROC getTypeName() OF windowObject

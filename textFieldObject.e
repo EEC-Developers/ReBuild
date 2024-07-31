@@ -10,6 +10,7 @@ OPT MODULE, OSVERSION=37
         'gadgets/integer','integer',
         'gadgets/chooser','chooser',
         'gadgets/checkbox','checkbox',
+        'gadgets/scroller',
         'images/label','label',
         'images/bevel',
         'amigalib/boopsi',
@@ -18,19 +19,19 @@ OPT MODULE, OSVERSION=37
         'intuition/intuition',
         'intuition/imageclass',
         'intuition/gadgetclass',
+        'intuition/icclass',
         'utility/tagitem'
 
-  MODULE '*reactionObject','*reactionForm','*colourPicker','*sourceGen','*validator'
+  MODULE '*reactionObject','*reactionForm','*colourPicker','*sourceGen','*validator','*stringlist'
 
-EXPORT ENUM TEXTFIELDGAD_IDENT, TEXTFIELDGAD_HINT, TEXTFIELDGAD_DELIM, TEXTFIELDGAD_ACCEPT, TEXTFIELDGAD_REJECT, 
+EXPORT ENUM TEXTFIELDGAD_IDENT, TEXTFIELDGAD_LABEL, TEXTFIELDGAD_HINT, TEXTFIELDGAD_DELIM, TEXTFIELDGAD_ACCEPT, TEXTFIELDGAD_REJECT, 
       TEXTFIELDGAD_BLINKRATE, TEXTFIELDGAD_MAXSIZE, TEXTFIELDGAD_SPACING, TEXTFIELDGAD_TABSPACES,
       TEXTFIELDGAD_DISABLED, TEXTFIELDGAD_TABCYCLE, TEXTFIELDGAD_BLOCK, TEXTFIELDGAD_MAXSIZEBEEP, TEXTFIELDGAD_PARTIAL,
       TEXTFIELDGAD_NOGHOST, TEXTFIELDGAD_READONLY, TEXTFIELDGAD_NONPRINTCHARS, TEXTFIELDGAD_INVERTED, TEXTFIELDGAD_VCENTER,
-      TEXTFIELDGAD_USERALIGN, TEXTFIELDGAD_RULEDPAPER, TEXTFIELDGAD_SCROLLBAR,
+      TEXTFIELDGAD_USERALIGN, TEXTFIELDGAD_RULEDPAPER, TEXTFIELDGAD_LINKTOVSCROLL,
       TEXTFIELDGAD_PAPERPEN, TEXTFIELDGAD_INKPEN, TEXTFIELDGAD_LINEPEN,
       TEXTFIELDGAD_BORDER, TEXTFIELDGAD_ALIGN,
       TEXTFIELDGAD_OK, TEXTFIELDGAD_CHILD, TEXTFIELDGAD_CANCEL
-      
 
 CONST NUM_TEXTFIELD_GADS=TEXTFIELDGAD_CANCEL+1
 // V1 attributes
@@ -119,7 +120,7 @@ EXPORT OBJECT textFieldObject OF reactionObject
   vCenter:CHAR
   userAlign:CHAR
   ruledPaper:CHAR
-  scrollBar:CHAR
+  linkToVScroll:INT
   paperPen:INT
   inkPen:INT
   linePen:INT
@@ -132,6 +133,7 @@ PRIVATE
   textFieldObject:PTR TO textFieldObject
   labels1:PTR TO LONG
   labels2:PTR TO LONG
+  labels3:PTR TO LONG
   tempPaperPen:INT
   tempInkPen:INT
   tempLinePen:INT
@@ -149,7 +151,7 @@ PROC create() OF textFieldSettingsForm
   scr:=LockPubScreen(NIL)
   arrows:=(scr.width>=800)
   UnlockPubScreen(NIL,scr)
- 
+
   self.windowObj:=WindowObject,
     WA_TITLE, 'TextField Attribute Setting',
     WA_LEFT, 0,
@@ -189,6 +191,17 @@ PROC create() OF textFieldSettingsForm
           LABEL_TEXT, 'Identifier',
         LabelEnd,
 
+        LAYOUT_ADDCHILD, self.gadgetList[ TEXTFIELDGAD_LABEL ]:=StringObject,
+          GA_ID, TEXTFIELDGAD_LABEL,
+          GA_RELVERIFY, TRUE,
+          GA_TABCYCLE, TRUE,
+          STRINGA_MAXCHARS, 80,
+        StringEnd,
+
+        CHILD_LABEL, LabelObject,
+          LABEL_TEXT, '_Label',
+        LabelEnd,
+
         LAYOUT_ADDCHILD,  self.gadgetList[ TEXTFIELDGAD_HINT ]:=ButtonObject,
           GA_ID, TEXTFIELDGAD_HINT,
           GA_TEXT, 'Hint',
@@ -200,6 +213,7 @@ PROC create() OF textFieldSettingsForm
 
       LAYOUT_ADDCHILD, LayoutObject,
         LAYOUT_ORIENTATION, LAYOUT_ORIENT_HORIZ,
+        LAYOUT_FIXEDHORIZ, FALSE,
         
         LAYOUT_ADDCHILD, self.gadgetList[ TEXTFIELDGAD_DELIM ]:=StringObject,
           GA_ID, TEXTFIELDGAD_DELIM,
@@ -237,6 +251,7 @@ PROC create() OF textFieldSettingsForm
 
       LAYOUT_ADDCHILD, LayoutObject,
         LAYOUT_ORIENTATION, LAYOUT_ORIENT_HORIZ,
+        LAYOUT_FIXEDHORIZ, FALSE,
 
         LAYOUT_ADDCHILD,  self.gadgetList[ TEXTFIELDGAD_BLINKRATE ]:=IntegerObject,
           GA_ID, TEXTFIELDGAD_BLINKRATE,
@@ -260,6 +275,35 @@ PROC create() OF textFieldSettingsForm
           LABEL_TEXT, 'MaxSize',
         LabelEnd,
 
+        LAYOUT_ADDCHILD, self.gadgetList[ TEXTFIELDGAD_DISABLED ]:=CheckBoxObject,
+          GA_ID, TEXTFIELDGAD_DISABLED,
+          GA_RELVERIFY, TRUE,
+          GA_TABCYCLE, TRUE,
+          GA_TEXT, 'Disabled',
+          CHECKBOX_TEXTPLACE, PLACETEXT_LEFT,
+        CheckBoxEnd,
+
+        LAYOUT_ADDCHILD, self.gadgetList[ TEXTFIELDGAD_TABCYCLE ]:=CheckBoxObject,
+          GA_ID, TEXTFIELDGAD_TABCYCLE,
+          GA_RELVERIFY, TRUE,
+          GA_TABCYCLE, TRUE,
+          GA_TEXT, 'TabCycle',
+          CHECKBOX_TEXTPLACE, PLACETEXT_LEFT,
+        CheckBoxEnd,
+
+        LAYOUT_ADDCHILD, self.gadgetList[ TEXTFIELDGAD_PARTIAL ]:=CheckBoxObject,
+          GA_ID, TEXTFIELDGAD_PARTIAL,
+          GA_RELVERIFY, TRUE,
+          GA_TABCYCLE, TRUE,
+          GA_TEXT, 'Partial',
+          CHECKBOX_TEXTPLACE, PLACETEXT_LEFT,
+        CheckBoxEnd,
+      LayoutEnd,
+
+      LAYOUT_ADDCHILD, LayoutObject,
+        LAYOUT_ORIENTATION, LAYOUT_ORIENT_HORIZ,
+        LAYOUT_FIXEDHORIZ, FALSE,
+
         LAYOUT_ADDCHILD,  self.gadgetList[ TEXTFIELDGAD_SPACING ]:=IntegerObject,
           GA_ID, TEXTFIELDGAD_SPACING,
           GA_RELVERIFY, TRUE,
@@ -281,24 +325,13 @@ PROC create() OF textFieldSettingsForm
         CHILD_LABEL, LabelObject,
           LABEL_TEXT, 'TabSpaces',
         LabelEnd,
-      LayoutEnd,
 
-      LAYOUT_ADDCHILD, LayoutObject,
-        LAYOUT_ORIENTATION, LAYOUT_ORIENT_HORIZ,
 
-        LAYOUT_ADDCHILD, self.gadgetList[ TEXTFIELDGAD_DISABLED ]:=CheckBoxObject,
-          GA_ID, TEXTFIELDGAD_DISABLED,
+        LAYOUT_ADDCHILD, self.gadgetList[ TEXTFIELDGAD_MAXSIZEBEEP ]:=CheckBoxObject,
+          GA_ID, TEXTFIELDGAD_MAXSIZEBEEP,
           GA_RELVERIFY, TRUE,
           GA_TABCYCLE, TRUE,
-          GA_TEXT, 'Disabled',
-          CHECKBOX_TEXTPLACE, PLACETEXT_LEFT,
-        CheckBoxEnd,
-
-        LAYOUT_ADDCHILD, self.gadgetList[ TEXTFIELDGAD_TABCYCLE ]:=CheckBoxObject,
-          GA_ID, TEXTFIELDGAD_TABCYCLE,
-          GA_RELVERIFY, TRUE,
-          GA_TABCYCLE, TRUE,
-          GA_TEXT, 'TabCycle',
+          GA_TEXT, 'MaxSizeBeep',
           CHECKBOX_TEXTPLACE, PLACETEXT_LEFT,
         CheckBoxEnd,
 
@@ -309,26 +342,11 @@ PROC create() OF textFieldSettingsForm
           GA_TEXT, 'BlockCursor',
           CHECKBOX_TEXTPLACE, PLACETEXT_LEFT,
         CheckBoxEnd,
-
-        LAYOUT_ADDCHILD, self.gadgetList[ TEXTFIELDGAD_MAXSIZEBEEP ]:=CheckBoxObject,
-          GA_ID, TEXTFIELDGAD_MAXSIZEBEEP,
-          GA_RELVERIFY, TRUE,
-          GA_TABCYCLE, TRUE,
-          GA_TEXT, 'MaxSizeBeep',
-          CHECKBOX_TEXTPLACE, PLACETEXT_LEFT,
-        CheckBoxEnd,
-
-        LAYOUT_ADDCHILD, self.gadgetList[ TEXTFIELDGAD_PARTIAL ]:=CheckBoxObject,
-          GA_ID, TEXTFIELDGAD_PARTIAL,
-          GA_RELVERIFY, TRUE,
-          GA_TABCYCLE, TRUE,
-          GA_TEXT, 'Partial',
-          CHECKBOX_TEXTPLACE, PLACETEXT_LEFT,
-        CheckBoxEnd,
       LayoutEnd,
 
       LAYOUT_ADDCHILD, LayoutObject,
         LAYOUT_ORIENTATION, LAYOUT_ORIENT_HORIZ,
+        LAYOUT_FIXEDHORIZ, FALSE,
 
         LAYOUT_ADDCHILD, self.gadgetList[ TEXTFIELDGAD_NOGHOST ]:=CheckBoxObject,
           GA_ID, TEXTFIELDGAD_NOGHOST,
@@ -373,6 +391,7 @@ PROC create() OF textFieldSettingsForm
 
       LAYOUT_ADDCHILD, LayoutObject,
         LAYOUT_ORIENTATION, LAYOUT_ORIENT_HORIZ,
+        LAYOUT_FIXEDHORIZ, FALSE,
 
         LAYOUT_ADDCHILD, self.gadgetList[ TEXTFIELDGAD_USERALIGN ]:=CheckBoxObject,
           GA_ID, TEXTFIELDGAD_USERALIGN,
@@ -390,39 +409,19 @@ PROC create() OF textFieldSettingsForm
           CHECKBOX_TEXTPLACE, PLACETEXT_LEFT,
         CheckBoxEnd,
 
-        LAYOUT_ADDCHILD, self.gadgetList[ TEXTFIELDGAD_SCROLLBAR ]:=CheckBoxObject,
-          GA_DISABLED, TRUE,
-          GA_ID, TEXTFIELDGAD_SCROLLBAR,
+        LAYOUT_ADDCHILD, self.gadgetList[ TEXTFIELDGAD_LINKTOVSCROLL ]:=ChooserObject,
+          GA_ID, TEXTFIELDGAD_LINKTOVSCROLL,
           GA_RELVERIFY, TRUE,
           GA_TABCYCLE, TRUE,
-          GA_TEXT, 'ScrollBar',
-          CHECKBOX_TEXTPLACE, PLACETEXT_LEFT,
-        CheckBoxEnd,
-      LayoutEnd,
-
-      LAYOUT_ADDCHILD, LayoutObject,
-        LAYOUT_ORIENTATION, LAYOUT_ORIENT_HORIZ,
-
-        LAYOUT_ADDCHILD,  self.gadgetList[ TEXTFIELDGAD_PAPERPEN ]:=ButtonObject,
-          GA_ID, TEXTFIELDGAD_PAPERPEN,
-          GA_TEXT, 'PaperPen',
-          GA_RELVERIFY, TRUE,
-          GA_TABCYCLE, TRUE,
-        ButtonEnd,
-
-        LAYOUT_ADDCHILD,  self.gadgetList[ TEXTFIELDGAD_INKPEN ]:=ButtonObject,
-          GA_ID, TEXTFIELDGAD_INKPEN,
-          GA_TEXT, 'InkPen',
-          GA_RELVERIFY, TRUE,
-          GA_TABCYCLE, TRUE,
-        ButtonEnd,
-
-        LAYOUT_ADDCHILD,  self.gadgetList[ TEXTFIELDGAD_LINEPEN ]:=ButtonObject,
-          GA_ID, TEXTFIELDGAD_LINEPEN,
-          GA_TEXT, 'LinePen',
-          GA_RELVERIFY, TRUE,
-          GA_TABCYCLE, TRUE,
-        ButtonEnd,
+          CHOOSER_POPUP, TRUE,
+          CHOOSER_MAXLABELS, 32,
+          CHOOSER_ACTIVE, 0,
+          CHOOSER_WIDTH, -1,          
+          CHOOSER_LABELS, self.labels3:=chooserLabelsA(['None',0]),
+        ChooserEnd,
+        CHILD_LABEL, LabelObject,
+          LABEL_TEXT, 'Link to scroller',
+        LabelEnd,
       LayoutEnd,
 
       LAYOUT_ADDCHILD, LayoutObject,
@@ -442,6 +441,24 @@ PROC create() OF textFieldSettingsForm
           LABEL_TEXT, '_Border',
         LabelEnd,
 
+        LAYOUT_ADDCHILD,  self.gadgetList[ TEXTFIELDGAD_PAPERPEN ]:=ButtonObject,
+          GA_ID, TEXTFIELDGAD_PAPERPEN,
+          GA_TEXT, 'PaperPen',
+          GA_RELVERIFY, TRUE,
+          GA_TABCYCLE, TRUE,
+        ButtonEnd,
+
+        LAYOUT_ADDCHILD,  self.gadgetList[ TEXTFIELDGAD_INKPEN ]:=ButtonObject,
+          GA_ID, TEXTFIELDGAD_INKPEN,
+          GA_TEXT, 'InkPen',
+          GA_RELVERIFY, TRUE,
+          GA_TABCYCLE, TRUE,
+        ButtonEnd,
+      LayoutEnd,
+
+      LAYOUT_ADDCHILD, LayoutObject,
+        LAYOUT_ORIENTATION, LAYOUT_ORIENT_HORIZ,
+
         LAYOUT_ADDCHILD, self.gadgetList[ TEXTFIELDGAD_ALIGN ]:=ChooserObject,
           GA_ID, TEXTFIELDGAD_ALIGN,
           GA_RELVERIFY, TRUE,
@@ -455,6 +472,12 @@ PROC create() OF textFieldSettingsForm
         CHILD_LABEL, LabelObject,
           LABEL_TEXT, '_Justification',
         LabelEnd,
+        LAYOUT_ADDCHILD,  self.gadgetList[ TEXTFIELDGAD_LINEPEN ]:=ButtonObject,
+          GA_ID, TEXTFIELDGAD_LINEPEN,
+          GA_TEXT, 'LinePen',
+          GA_RELVERIFY, TRUE,
+          GA_TABCYCLE, TRUE,
+        ButtonEnd,
       LayoutEnd,
 
       LAYOUT_ADDCHILD, LayoutObject,
@@ -528,9 +551,11 @@ ENDPROC
 PROC end() OF textFieldSettingsForm
   freeChooserLabels( self.labels1 )
   freeChooserLabels( self.labels2 )
+  freeChooserLabels( self.labels3 )
 
   END self.gadgetList[NUM_TEXTFIELD_GADS]
   END self.gadgetActions[NUM_TEXTFIELD_GADS]
+  DisposeObject(self.windowObj)
 ENDPROC
 
 EXPORT PROC canClose(modalRes) OF textFieldSettingsForm
@@ -552,6 +577,27 @@ ENDPROC
 
 PROC editSettings(comp:PTR TO textFieldObject) OF textFieldSettingsForm
   DEF res
+  DEF scrlgads:PTR TO LONG
+  DEF i,selscroll
+  DEF gad:PTR TO reactionObject
+  DEF scrollgads:PTR TO stdlist
+    
+  NEW scrollgads.stdlist(10)
+  comp.parent.findObjectsByType(scrollgads,TYPE_SCROLLER)
+  
+  scrlgads:=List(scrollgads.count()+2)
+  ListAddItem(scrlgads,'None')
+  selscroll:=0
+  FOR i:=0 TO scrollgads.count()-1
+    gad:=scrollgads.item(i)
+    IF gad.id=comp.linkToVScroll THEN selscroll:=(i+1)
+    ListAddItem(scrlgads,gad.ident)
+  ENDFOR
+  ListAddItem(scrlgads,0)
+  freeChooserLabels(self.labels3)
+  self.labels3:=chooserLabelsA(scrlgads)
+  SetGadgetAttrsA(self.gadgetList[ TEXTFIELDGAD_LINKTOVSCROLL ],0,0,[CHOOSER_LABELS,self.labels3,0]) 
+  DisposeLink(scrlgads)
 
   self.textFieldObject:=comp
     
@@ -561,6 +607,7 @@ PROC editSettings(comp:PTR TO textFieldObject) OF textFieldSettingsForm
     
   self.updateHint(TEXTFIELDGAD_HINT, comp.hintText)     
   SetGadgetAttrsA(self.gadgetList[ TEXTFIELDGAD_IDENT ],0,0,[STRINGA_TEXTVAL,comp.ident,0])
+  SetGadgetAttrsA(self.gadgetList[ TEXTFIELDGAD_LABEL ],0,0,[STRINGA_TEXTVAL,comp.label,0])
   SetGadgetAttrsA(self.gadgetList[ TEXTFIELDGAD_DELIM ],0,0,[STRINGA_TEXTVAL,comp.delimiters,0])
   SetGadgetAttrsA(self.gadgetList[ TEXTFIELDGAD_ACCEPT ],0,0,[STRINGA_TEXTVAL,comp.acceptChars,0])
   SetGadgetAttrsA(self.gadgetList[ TEXTFIELDGAD_REJECT ],0,0,[STRINGA_TEXTVAL,comp.rejectChars,0])
@@ -584,7 +631,7 @@ PROC editSettings(comp:PTR TO textFieldObject) OF textFieldSettingsForm
 
   SetGadgetAttrsA(self.gadgetList[ TEXTFIELDGAD_USERALIGN ],0,0,[CHECKBOX_CHECKED,comp.userAlign,0]) 
   SetGadgetAttrsA(self.gadgetList[ TEXTFIELDGAD_RULEDPAPER ],0,0,[CHECKBOX_CHECKED,comp.ruledPaper,0]) 
-  SetGadgetAttrsA(self.gadgetList[ TEXTFIELDGAD_SCROLLBAR ],0,0,[CHECKBOX_CHECKED,comp.scrollBar,0]) 
+  SetGadgetAttrsA(self.gadgetList[ TEXTFIELDGAD_LINKTOVSCROLL ],0,0,[CHOOSER_SELECTED,selscroll,0]) 
 
   SetGadgetAttrsA(self.gadgetList[ TEXTFIELDGAD_BORDER ],0,0,[CHOOSER_SELECTED,comp.border,0]) 
   SetGadgetAttrsA(self.gadgetList[ TEXTFIELDGAD_ALIGN ],0,0,[CHOOSER_SELECTED,comp.align,0]) 
@@ -597,6 +644,7 @@ PROC editSettings(comp:PTR TO textFieldObject) OF textFieldSettingsForm
     comp.linePen:=self.tempLinePen
 
     AstrCopy(comp.ident,Gets(self.gadgetList[ TEXTFIELDGAD_IDENT ],STRINGA_TEXTVAL))
+    AstrCopy(comp.label,Gets(self.gadgetList[ TEXTFIELDGAD_LABEL ],STRINGA_TEXTVAL))
     AstrCopy(comp.delimiters,Gets(self.gadgetList[ TEXTFIELDGAD_DELIM ],STRINGA_TEXTVAL))
     AstrCopy(comp.acceptChars,Gets(self.gadgetList[ TEXTFIELDGAD_ACCEPT ],STRINGA_TEXTVAL))
     AstrCopy(comp.rejectChars,Gets(self.gadgetList[ TEXTFIELDGAD_REJECT ],STRINGA_TEXTVAL))
@@ -620,11 +668,19 @@ PROC editSettings(comp:PTR TO textFieldObject) OF textFieldSettingsForm
 
     comp.userAlign:=Gets(self.gadgetList[ TEXTFIELDGAD_USERALIGN ],CHECKBOX_CHECKED)
     comp.ruledPaper:=Gets(self.gadgetList[ TEXTFIELDGAD_RULEDPAPER ],CHECKBOX_CHECKED)
-    comp.scrollBar:=Gets(self.gadgetList[ TEXTFIELDGAD_SCROLLBAR ],CHECKBOX_CHECKED)
+    selscroll:=Gets(self.gadgetList[ TEXTFIELDGAD_LINKTOVSCROLL ],CHOOSER_SELECTED)
 
     comp.border:=Gets(self.gadgetList[ TEXTFIELDGAD_BORDER ],CHOOSER_SELECTED)
     comp.align:=Gets(self.gadgetList[ TEXTFIELDGAD_ALIGN ],CHOOSER_SELECTED)
+
+    comp.linkToVScroll:=0
+    FOR i:=0 TO scrollgads.count()-1
+      gad:=scrollgads.item(i)
+      selscroll--
+      IF selscroll=0 THEN comp.linkToVScroll:=gad.id
+    ENDFOR
   ENDIF
+  END scrollgads
 ENDPROC res=MR_OK
 
 EXPORT PROC createPreviewObject(scr) OF textFieldObject
@@ -635,11 +691,11 @@ EXPORT PROC createPreviewObject(scr) OF textFieldObject
       GA_RELVERIFY, TRUE,
       GA_DISABLED, self.disabled,
       GA_TABCYCLE, self.tabCycle,
-      GA_READONLY, self.readOnly,
+      TEXTFIELD_READONLY, self.readOnly,
       
       TEXTFIELD_DELIMITERS, self.delimiters,
-      TEXTFIELD_ACCEPTCHARS, self.acceptChars,
-      TEXTFIELD_ACCEPTCHARS, self.rejectChars,
+      TEXTFIELD_ACCEPTCHARS, IF StrLen(self.acceptChars) THEN self.acceptChars ELSE 0,
+      TEXTFIELD_REJECTCHARS, IF StrLen(self.rejectChars) THEN self.rejectChars ELSE 0,
       TEXTFIELD_BLINKRATE, self.blinkRate,
       TEXTFIELD_MAXSIZE, self.maxSize,
       TEXTFIELD_SPACING, self.spacing,
@@ -668,22 +724,25 @@ EXPORT PROC createPreviewObject(scr) OF textFieldObject
   ENDIF
   IF self.previewObject=0 THEN self.previewObject:=self.createErrorObject(scr)
 
-  self.previewChildAttrs:=[
-        LAYOUT_MODIFYCHILD, self.previewObject,
-        CHILD_NOMINALSIZE, self.nominalSize,
-        CHILD_NODISPOSE, FALSE,
-        CHILD_MINWIDTH, self.minWidth,
-        CHILD_MINHEIGHT, self.minHeight,
-        CHILD_MAXWIDTH, self.maxWidth,
-        CHILD_MAXHEIGHT, self.maxHeight,
-        CHILD_WEIGHTEDWIDTH, self.weightedWidth,
-        CHILD_WEIGHTEDHEIGHT,self.weightedHeight,
-        CHILD_SCALEWIDTH, self.scaleWidth,
-        CHILD_SCALEHEIGHT, self.scaleHeight,
-        CHILD_NOMINALSIZE, self.nominalSize,
-        CHILD_WEIGHTMINIMUM, self.weightMinimum,
-        IF self.weightBar THEN LAYOUT_WEIGHTBAR ELSE TAG_IGNORE, 1,
-        TAG_END]
+  self.makePreviewChildAttrs(0)
+ENDPROC
+
+EXPORT PROC updatePreviewObject() OF textFieldObject
+  DEF map,maptarget:PTR TO reactionObject
+
+  IF self.linkToVScroll
+    map:=[TEXTFIELD_TOP, SCROLLER_TOP,
+      TEXTFIELD_LINES, SCROLLER_TOTAL,
+      TEXTFIELD_VISIBLE, SCROLLER_VISIBLE,
+      TAG_DONE]
+      maptarget:=self.parent.findReactionObject(self.linkToVScroll)
+  ELSE
+    map:=0
+    maptarget:=0
+  ENDIF
+  IF map THEN SetGadgetAttrsA(self.previewObject,0,0,[ICA_MAP,map,TAG_DONE])
+  IF maptarget THEN SetGadgetAttrsA(self.previewObject,0,0,[ICA_TARGET,maptarget.previewObject,TAG_DONE])
+
 ENDPROC
 
 EXPORT PROC create(parent) OF textFieldObject
@@ -710,7 +769,7 @@ EXPORT PROC create(parent) OF textFieldObject
   self.vCenter:=0
   self.userAlign:=0
   self.ruledPaper:=0
-  self.scrollBar:=FALSE
+  self.linkToVScroll:=FALSE
   self.paperPen:=-1
   self.inkPen:=-1
   self.linePen:=-1
@@ -755,7 +814,7 @@ EXPORT PROC serialiseData() OF textFieldObject IS
   makeProp(vCenter,FIELDTYPE_CHAR),
   makeProp(userAlign,FIELDTYPE_CHAR),
   makeProp(ruledPaper,FIELDTYPE_CHAR),
-  makeProp(scrollBar,FIELDTYPE_CHAR),
+  makeProp(linkToVScroll,FIELDTYPE_INT),
   makeProp(paperPen,FIELDTYPE_INT),
   makeProp(inkPen,FIELDTYPE_INT),
   makeProp(linePen,FIELDTYPE_INT),
@@ -796,7 +855,22 @@ EXPORT PROC genCodeProperties(srcGen:PTR TO srcGen) OF textFieldObject
   IF self.align<>0 THEN srcGen.componentProperty('TEXTFIELD_Alignment',ListItem(['TEXTFIELD_ALIGN_LEFT','TEXTFIELD_ALIGN_CENTER','TEXTFIELD_ALIGN_RIGHT'],self.align),FALSE)
 ENDPROC
 
-->  scrollBar:CHAR
+EXPORT PROC genCodeChildProperties(srcGen:PTR TO srcGen) OF textFieldObject
+  srcGen.componentAddChildLabel(self.label)
+  SUPER self.genCodeChildProperties(srcGen)
+ENDPROC
+
+EXPORT PROC genCodeMaps(header, srcGen:PTR TO srcGen) OF textFieldObject
+  DEF maptarget
+  IF self.linkToVScroll
+    maptarget:=self.parent.findReactionObject(self.linkToVScroll)
+  ELSE
+    maptarget:=0
+  ENDIF
+  IF maptarget
+    srcGen.setIcaMap(header, 'TEXTFIELD_Top, SCROLLER_Top, TEXTFIELD_Lines, SCROLLER_Total, TEXTFIELD_Visible, SCROLLER_Visible',self,maptarget)
+  ENDIF
+ENDPROC
 
 EXPORT PROC getTypeName() OF textFieldObject
   RETURN 'TextField'

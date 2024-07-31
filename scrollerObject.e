@@ -11,14 +11,18 @@ OPT MODULE, OSVERSION=37
         'gadgets/integer','integer',
         'gadgets/chooser','chooser',
         'gadgets/checkbox','checkbox',
+        'gadgets/texteditor',
         'images/label','label',
         'amigalib/boopsi',
         'libraries/gadtools',
         'intuition/intuition',
         'intuition/imageclass',
+        'intuition/icclass',
         'intuition/gadgetclass'
 
-  MODULE '*reactionObject','*reactionForm','*sourceGen','*validator'
+  MODULE '*reactionObject','*reactionForm','*sourceGen','*validator','*textEditorObject','*textFieldObject','*stringlist'
+
+CONST TEXTFIELD_TOP=$84000005
 
 EXPORT ENUM SCLGAD_IDENT, SCLGAD_NAME, SCLGAD_HINT, SCLGAD_TOP, SCLGAD_VISIBLE, SCLGAD_TOTAL, SCLGAD_ARROWDELTA,
       SCLGAD_ARROWS, SCLGAD_ORIENTATION,
@@ -226,6 +230,7 @@ PROC end() OF scrollerSettingsForm
   freeChooserLabels( self.labels1 )
   END self.gadgetList[NUM_SCL_GADS]
   END self.gadgetActions[NUM_SCL_GADS]
+  DisposeObject(self.windowObj)
 ENDPROC
 
 EXPORT PROC canClose(modalRes) OF scrollerSettingsForm
@@ -286,44 +291,41 @@ EXPORT PROC createPreviewObject(scr) OF scrollerObject
     ScrollerEnd
   IF self.previewObject=0 THEN self.previewObject:=self.createErrorObject(scr)
 
-  IF StrLen(self.name)>0
-    self.previewChildAttrs:=[
-      LAYOUT_MODIFYCHILD, self.previewObject,
-      CHILD_LABEL, LabelObject,
-        LABEL_TEXT, self.name,
-      LabelEnd,
-      CHILD_NOMINALSIZE, self.nominalSize,
-      CHILD_NODISPOSE, FALSE,
-      CHILD_MINWIDTH, self.minWidth,
-      CHILD_MINHEIGHT, self.minHeight,
-      CHILD_MAXWIDTH, self.maxWidth,
-      CHILD_MAXHEIGHT, self.maxHeight,
-      CHILD_WEIGHTEDWIDTH, self.weightedWidth,
-      CHILD_WEIGHTEDHEIGHT,self.weightedHeight,
-      CHILD_SCALEWIDTH, self.scaleWidth,
-      CHILD_SCALEHEIGHT, self.scaleHeight,
-      CHILD_NOMINALSIZE, self.nominalSize,
-      CHILD_WEIGHTMINIMUM, self.weightMinimum,
-      IF self.weightBar THEN LAYOUT_WEIGHTBAR ELSE TAG_IGNORE, 1,
-      TAG_END]
-  ELSE
-    self.previewChildAttrs:=[
-      LAYOUT_MODIFYCHILD, self.previewObject,
-      CHILD_NOMINALSIZE, self.nominalSize,
-      CHILD_NODISPOSE, FALSE,
-      CHILD_MINWIDTH, self.minWidth,
-      CHILD_MINHEIGHT, self.minHeight,
-      CHILD_MAXWIDTH, self.maxWidth,
-      CHILD_MAXHEIGHT, self.maxHeight,
-      CHILD_WEIGHTEDWIDTH, self.weightedWidth,
-      CHILD_WEIGHTEDHEIGHT,self.weightedHeight,
-      CHILD_SCALEWIDTH, self.scaleWidth,
-      CHILD_SCALEHEIGHT, self.scaleHeight,
-      CHILD_NOMINALSIZE, self.nominalSize,
-      CHILD_WEIGHTMINIMUM, self.weightMinimum,
-      IF self.weightBar THEN LAYOUT_WEIGHTBAR ELSE TAG_IGNORE, 1,
-      TAG_END]
-  ENDIF
+  self.makePreviewChildAttrs(self.name)
+ENDPROC
+
+EXPORT PROC updatePreviewObject() OF scrollerObject
+  DEF i,comp:PTR TO reactionObject
+  DEF map=0,maptarget=0:PTR TO reactionObject
+  DEF linkedgads:PTR TO stdlist
+  DEF root:PTR TO reactionObject
+
+  NEW linkedgads.stdlist(10)
+
+  root:=self
+  WHILE root.parent DO root:=root.parent
+
+  root.findObjectsByType(linkedgads,TYPE_TEXTEDITOR) 
+  FOR i:=0 TO linkedgads.count()-1
+    comp:=linkedgads.item(i)
+    IF comp::textEditorObject.linkToVScroll=self.id
+      map:=[SCROLLER_TOP, GA_TEXTEDITOR_PROP_FIRST,TAG_DONE]
+      maptarget:=comp
+    ENDIF
+  ENDFOR
+
+  self.parent.findObjectsByType(linkedgads,TYPE_TEXTFIELD) 
+  FOR i:=0 TO linkedgads.count()-1
+    comp:=linkedgads.item(i)
+    IF comp::textFieldObject.linkToVScroll=self.id
+      map:=[SCROLLER_TOP, TEXTFIELD_TOP,TAG_DONE]
+      maptarget:=comp
+    ENDIF
+  ENDFOR
+  END linkedgads
+
+  IF map THEN SetGadgetAttrsA(self.previewObject,0,0,[ICA_MAP,map,TAG_DONE])
+  IF maptarget THEN SetGadgetAttrsA(self.previewObject,0,0,[ICA_TARGET,maptarget.previewObject,TAG_DONE])
 ENDPROC
 
 EXPORT PROC create(parent) OF scrollerObject
@@ -375,6 +377,41 @@ ENDPROC
 EXPORT PROC genCodeChildProperties(srcGen:PTR TO srcGen) OF scrollerObject
   srcGen.componentAddChildLabel(self.name)
   SUPER self.genCodeChildProperties(srcGen)
+ENDPROC
+
+EXPORT PROC genCodeMaps(header, srcGen:PTR TO srcGen) OF scrollerObject
+  DEF i,comp:PTR TO reactionObject
+  DEF map=0,maptarget=0:PTR TO reactionObject
+  DEF linkedgads:PTR TO stdlist
+  DEF root:PTR TO reactionObject
+
+  NEW linkedgads.stdlist(10)
+
+  root:=self
+  WHILE root.parent DO root:=root.parent
+
+  root.findObjectsByType(linkedgads,TYPE_TEXTEDITOR) 
+  FOR i:=0 TO linkedgads.count()-1
+    comp:=linkedgads.item(i)
+    IF comp::textEditorObject.linkToVScroll=self.id
+      map:='SCROLLER_Top, GA_TEXTEDITOR_Prop_First'
+      maptarget:=comp
+    ENDIF
+  ENDFOR
+
+  self.parent.findObjectsByType(linkedgads,TYPE_TEXTFIELD) 
+  FOR i:=0 TO linkedgads.count()-1
+    comp:=linkedgads.item(i)
+    IF comp::textFieldObject.linkToVScroll=self.id
+      map:='SCROLLER_Top, TEXTFIELD_Top'
+      maptarget:=comp
+    ENDIF
+  ENDFOR
+  END linkedgads
+
+  IF maptarget
+    srcGen.setIcaMap(header, map,self,maptarget)
+  ENDIF
 ENDPROC
 
 EXPORT PROC getTypeName() OF scrollerObject

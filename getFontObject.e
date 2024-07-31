@@ -160,6 +160,10 @@ PROC create() OF getFontSettingsForm
         CHILD_LABEL, LabelObject,
           LABEL_TEXT, 'Top Edge',
         LabelEnd,
+      LayoutEnd,
+
+      LAYOUT_ADDCHILD, LayoutObject,
+        LAYOUT_ORIENTATION, LAYOUT_ORIENT_HORIZ,
 
         LAYOUT_ADDCHILD,  self.gadgetList[ GETFONTGAD_WIDTH ]:=IntegerObject,
           GA_ID, GETFONTGAD_WIDTH,
@@ -188,7 +192,6 @@ PROC create() OF getFontSettingsForm
 
       LAYOUT_ADDCHILD, LayoutObject,
         LAYOUT_ORIENTATION, LAYOUT_ORIENT_HORIZ,
-        LAYOUT_SHRINKWRAP, TRUE,
       
         LAYOUT_ADDCHILD,  self.gadgetList[ GETFONTGAD_MINHEIGHT ]:=IntegerObject,
           GA_ID, GETFONTGAD_MINHEIGHT,
@@ -213,6 +216,10 @@ PROC create() OF getFontSettingsForm
         CHILD_LABEL, LabelObject,
           LABEL_TEXT, 'MaxHeight',
         LabelEnd,
+      LayoutEnd,
+
+      LAYOUT_ADDCHILD, LayoutObject,
+        LAYOUT_ORIENTATION, LAYOUT_ORIENT_HORIZ,
 
         LAYOUT_ADDCHILD,  self.gadgetList[ GETFONTGAD_MAXFRONT ]:=IntegerObject,
           GA_ID, GETFONTGAD_MAXFRONT,
@@ -331,6 +338,7 @@ ENDPROC
 PROC end() OF getFontSettingsForm
   END self.gadgetList[NUM_GETFONT_GADS]
   END self.gadgetActions[NUM_GETFONT_GADS]
+  DisposeObject(self.windowObj)
 ENDPROC
 
 EXPORT PROC canClose(modalRes) OF getFontSettingsForm
@@ -409,44 +417,7 @@ EXPORT PROC createPreviewObject(scr) OF getFontObject
   TAG_DONE])
   IF self.previewObject=0 THEN self.previewObject:=self.createErrorObject(scr)
   
-  IF StrLen(self.name)>0
-    self.previewChildAttrs:=[
-          LAYOUT_MODIFYCHILD, self.previewObject,
-          CHILD_LABEL, LabelObject,
-            LABEL_TEXT, self.name,
-          LabelEnd,
-          CHILD_NOMINALSIZE, self.nominalSize,
-          CHILD_NODISPOSE, FALSE,
-          CHILD_MINWIDTH, self.minWidth,
-          CHILD_MINHEIGHT, self.minHeight,
-          CHILD_MAXWIDTH, self.maxWidth,
-          CHILD_MAXHEIGHT, self.maxHeight,
-          CHILD_WEIGHTEDWIDTH, self.weightedWidth,
-          CHILD_WEIGHTEDHEIGHT,self.weightedHeight,
-          CHILD_SCALEWIDTH, self.scaleWidth,
-          CHILD_SCALEHEIGHT, self.scaleHeight,
-          CHILD_NOMINALSIZE, self.nominalSize,
-          CHILD_WEIGHTMINIMUM, self.weightMinimum,
-          IF self.weightBar THEN LAYOUT_WEIGHTBAR ELSE TAG_IGNORE, 1,
-          TAG_END]
-  ELSE
-    self.previewChildAttrs:=[
-          LAYOUT_MODIFYCHILD, self.previewObject,
-          CHILD_NOMINALSIZE, self.nominalSize,
-          CHILD_NODISPOSE, FALSE,
-          CHILD_MINWIDTH, self.minWidth,
-          CHILD_MINHEIGHT, self.minHeight,
-          CHILD_MAXWIDTH, self.maxWidth,
-          CHILD_MAXHEIGHT, self.maxHeight,
-          CHILD_WEIGHTEDWIDTH, self.weightedWidth,
-          CHILD_WEIGHTEDHEIGHT,self.weightedHeight,
-          CHILD_SCALEWIDTH, self.scaleWidth,
-          CHILD_SCALEHEIGHT, self.scaleHeight,
-          CHILD_NOMINALSIZE, self.nominalSize,
-          CHILD_WEIGHTMINIMUM, self.weightMinimum,
-          IF self.weightBar THEN LAYOUT_WEIGHTBAR ELSE TAG_IGNORE, 1,
-          TAG_END]
-  ENDIF
+  self.makePreviewChildAttrs(self.name)
 ENDPROC
 
 EXPORT PROC create(parent) OF getFontObject

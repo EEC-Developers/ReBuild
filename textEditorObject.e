@@ -11,18 +11,21 @@ OPT MODULE, OSVERSION=37
         'gadgets/checkbox','checkbox',
         'gadgets/chooser','chooser',
         'gadgets/integer','integer',
+        'gadgets/scroller',
         'images/label','label',
         'amigalib/boopsi',
         'libraries/gadtools',
         'intuition/intuition',
         'intuition/screens',
         'intuition/imageclass',
+        'intuition/icclass',
         'intuition/gadgetclass'
 
-  MODULE '*reactionObject','*reactionForm','*sourcegen','*validator'
+  MODULE '*reactionObject','*reactionForm','*sourcegen','*validator','*stringlist'
 
-EXPORT ENUM TEXTEDGAD_IDENT, TEXTEDGAD_HINT, TEXTEDGAD_EXPORTWRAP,TEXTEDGAD_FIXEDFONT,TEXTEDGAD_FLOW,TEXTEDGAD_IMPORTWRAP,
+EXPORT ENUM TEXTEDGAD_IDENT, TEXTEDGAD_LABEL, TEXTEDGAD_HINT, TEXTEDGAD_EXPORTWRAP,TEXTEDGAD_FIXEDFONT,TEXTEDGAD_FLOW,TEXTEDGAD_IMPORTWRAP,
       TEXTEDGAD_INDENTWIDTH,TEXTEDGAD_LINEENDING,TEXTEDGAD_LINENUMBERS,TEXTEDGAD_SPACESPERTAB,TEXTEDGAD_TABTYPE,TEXTEDGAD_READONLY,
+      TEXTEDGAD_HORIZSCROLL,TEXTEDGAD_LINKTOVSCROLL,
       TEXTEDGAD_OK, TEXTEDGAD_CHILD, TEXTEDGAD_CANCEL
      
 CONST NUM_TEXTED_GADS=TEXTEDGAD_CANCEL+1
@@ -40,6 +43,8 @@ EXPORT OBJECT textEditorObject OF reactionObject
   spacesPerTab:INT
   tabKeyPolicy:CHAR
   readOnly:CHAR
+  horizScroll:CHAR
+  linkToVScroll:INT
 ENDOBJECT
 
 OBJECT textEditorSettingsForm OF reactionForm
@@ -48,6 +53,7 @@ PRIVATE
   labels1:PTR TO LONG
   labels2:PTR TO LONG
   labels3:PTR TO LONG
+  labels4:PTR TO LONG
 ENDOBJECT
 
 PROC create() OF textEditorSettingsForm
@@ -95,6 +101,17 @@ PROC create() OF textEditorSettingsForm
 
         CHILD_LABEL, LabelObject,
           LABEL_TEXT, 'Identifier',
+        LabelEnd,
+
+        LAYOUT_ADDCHILD, self.gadgetList[ TEXTEDGAD_LABEL ]:=StringObject,
+          GA_ID, TEXTEDGAD_LABEL,
+          GA_RELVERIFY, TRUE,
+          GA_TABCYCLE, TRUE,
+          STRINGA_MAXCHARS, 80,
+        StringEnd,
+
+        CHILD_LABEL, LabelObject,
+          LABEL_TEXT, '_Label',
         LabelEnd,
 
         LAYOUT_ADDCHILD,  self.gadgetList[ TEXTEDGAD_HINT ]:=ButtonObject,
@@ -152,20 +169,22 @@ PROC create() OF textEditorSettingsForm
           LABEL_TEXT, 'Flow',
         LabelEnd,
 
-        LAYOUT_ADDCHILD, self.gadgetList[ TEXTEDGAD_LINEENDING ]:=ChooserObject,
-          GA_ID, TEXTEDGAD_LINEENDING,
-          GA_RELVERIFY, TRUE,
-          GA_TABCYCLE, TRUE,
-          CHOOSER_POPUP, TRUE,
-          CHOOSER_MAXLABELS, 12,
-          CHOOSER_ACTIVE, 0,
-          CHOOSER_WIDTH, -1,          
-          CHOOSER_LABELS, self.labels2:=chooserLabelsA(['LINEENDING_LF','LINEENDING_CR','LINEENDING_CRLF','LINEENDING_ASIMPORT',0]),
-        ChooserEnd,
-        CHILD_LABEL, LabelObject,
-          LABEL_TEXT, 'Type',
-        LabelEnd,
       LayoutEnd,
+
+      LAYOUT_ADDCHILD, self.gadgetList[ TEXTEDGAD_LINEENDING ]:=ChooserObject,
+        GA_ID, TEXTEDGAD_LINEENDING,
+        GA_RELVERIFY, TRUE,
+        GA_TABCYCLE, TRUE,
+        CHOOSER_POPUP, TRUE,
+        CHOOSER_MAXLABELS, 12,
+        CHOOSER_ACTIVE, 0,
+        CHOOSER_WIDTH, -1,          
+        CHOOSER_LABELS, self.labels2:=chooserLabelsA(['LINEENDING_LF','LINEENDING_CR','LINEENDING_CRLF','LINEENDING_ASIMPORT',0]),
+      ChooserEnd,
+      CHILD_LABEL, LabelObject,
+        LABEL_TEXT, 'Type',
+      LabelEnd,
+
 
       LAYOUT_ADDCHILD, LayoutObject,
         LAYOUT_ORIENTATION, LAYOUT_ORIENT_HORIZ,
@@ -219,17 +238,31 @@ PROC create() OF textEditorSettingsForm
         LabelEnd,
       LayoutEnd,
 
-      LAYOUT_ADDCHILD,  self.gadgetList[ TEXTEDGAD_SPACESPERTAB ]:=IntegerObject,
-        GA_ID, TEXTEDGAD_SPACESPERTAB,
-        GA_RELVERIFY, TRUE,
-        GA_TABCYCLE, TRUE,
-        INTEGER_MAXCHARS, 2,
-        INTEGER_MINIMUM, 0,
-        INTEGER_MAXIMUM, 99,
-      IntegerEnd,
-      CHILD_LABEL, LabelObject,
-        LABEL_TEXT, 'Spaces Per Tab',
-      LabelEnd,
+      LAYOUT_ADDCHILD, LayoutObject,
+        LAYOUT_ORIENTATION, LAYOUT_ORIENT_HORIZ,
+
+        LAYOUT_ADDCHILD, self.gadgetList[ TEXTEDGAD_HORIZSCROLL ]:=CheckBoxObject,
+          GA_ID, TEXTEDGAD_HORIZSCROLL,
+          GA_RELVERIFY, TRUE,
+          GA_TABCYCLE, TRUE,
+          GA_TEXT, 'Horizontal scroll',
+          CHECKBOX_TEXTPLACE, PLACETEXT_LEFT,
+        CheckBoxEnd,
+
+        LAYOUT_ADDCHILD, self.gadgetList[ TEXTEDGAD_LINKTOVSCROLL ]:=ChooserObject,
+          GA_ID, TEXTEDGAD_LINKTOVSCROLL,
+          GA_RELVERIFY, TRUE,
+          GA_TABCYCLE, TRUE,
+          CHOOSER_POPUP, TRUE,
+          CHOOSER_MAXLABELS, 32,
+          CHOOSER_ACTIVE, 0,
+          CHOOSER_WIDTH, -1,          
+          CHOOSER_LABELS, self.labels4,
+        ChooserEnd,
+        CHILD_LABEL, LabelObject,
+          LABEL_TEXT, 'Link to scroller',
+        LabelEnd,
+      LayoutEnd,
 
       LAYOUT_ADDCHILD, LayoutObject,
         LAYOUT_ORIENTATION, LAYOUT_ORIENT_HORIZ,
@@ -276,9 +309,11 @@ PROC end() OF textEditorSettingsForm
   freeChooserLabels( self.labels1 )
   freeChooserLabels( self.labels2 )
   freeChooserLabels( self.labels3 )
+  freeChooserLabels( self.labels4 )
 
   END self.gadgetList[NUM_TEXTED_GADS]
   END self.gadgetActions[NUM_TEXTED_GADS]
+  DisposeObject(self.windowObj)
 ENDPROC
 
 EXPORT PROC canClose(modalRes) OF textEditorSettingsForm
@@ -300,11 +335,33 @@ ENDPROC
 
 PROC editSettings(comp:PTR TO textEditorObject) OF textEditorSettingsForm
   DEF res
+  DEF scrlgads:PTR TO LONG
+  DEF i,selscroll
+  DEF gad:PTR TO reactionObject
+  DEF scrollgads:PTR TO stdlist
+
+  NEW scrollgads.stdlist(10)
+  comp.parent.findObjectsByType(scrollgads,TYPE_SCROLLER)
+  
+  scrlgads:=List(scrollgads.count()+2)
+  ListAddItem(scrlgads,'None')
+  selscroll:=0
+  FOR i:=0 TO scrollgads.count()-1
+    gad:=scrollgads.item(i)
+    IF gad.id=comp.linkToVScroll THEN selscroll:=(i+1)
+    ListAddItem(scrlgads,gad.ident)
+  ENDFOR
+  ListAddItem(scrlgads,0)
+  freeChooserLabels(self.labels4)
+  self.labels4:=chooserLabelsA(scrlgads)
+  SetGadgetAttrsA(self.gadgetList[ TEXTEDGAD_LINKTOVSCROLL ],0,0,[CHOOSER_LABELS,self.labels4,0]) 
+  DisposeLink(scrlgads)
 
   self.textEditorObject:=comp
 
   self.updateHint(TEXTEDGAD_HINT, comp.hintText)     
   SetGadgetAttrsA(self.gadgetList[ TEXTEDGAD_IDENT ],0,0,[STRINGA_TEXTVAL,comp.ident,0])   
+  SetGadgetAttrsA(self.gadgetList[ TEXTEDGAD_LABEL ],0,0,[STRINGA_TEXTVAL,comp.label,0])   
   SetGadgetAttrsA(self.gadgetList[ TEXTEDGAD_EXPORTWRAP ],0,0,[CHECKBOX_CHECKED,comp.exportWrap,0]) 
   SetGadgetAttrsA(self.gadgetList[ TEXTEDGAD_FIXEDFONT ],0,0,[CHECKBOX_CHECKED,comp.fixedFont,0]) 
   SetGadgetAttrsA(self.gadgetList[ TEXTEDGAD_FLOW ],0,0,[CHOOSER_SELECTED,comp.flow,0]) 
@@ -315,10 +372,13 @@ PROC editSettings(comp:PTR TO textEditorObject) OF textEditorSettingsForm
   SetGadgetAttrsA(self.gadgetList[ TEXTEDGAD_SPACESPERTAB ],0,0,[INTEGER_NUMBER,comp.spacesPerTab,0]) 
   SetGadgetAttrsA(self.gadgetList[ TEXTEDGAD_TABTYPE ],0,0,[CHOOSER_SELECTED,comp.tabKeyPolicy,0]) 
   SetGadgetAttrsA(self.gadgetList[ TEXTEDGAD_READONLY ],0,0,[CHECKBOX_CHECKED,comp.readOnly,0]) 
+  SetGadgetAttrsA(self.gadgetList[ TEXTEDGAD_HORIZSCROLL ],0,0,[CHECKBOX_CHECKED,comp.horizScroll,0]) 
+  SetGadgetAttrsA(self.gadgetList[ TEXTEDGAD_LINKTOVSCROLL ],0,0,[CHOOSER_SELECTED,selscroll,0]) 
 
   res:=self.showModal()
   IF res=MR_OK
     AstrCopy(comp.ident,Gets(self.gadgetList[ TEXTEDGAD_IDENT ],STRINGA_TEXTVAL))
+    AstrCopy(comp.label,Gets(self.gadgetList[ TEXTEDGAD_LABEL ],STRINGA_TEXTVAL))
     comp.exportWrap:=Gets(self.gadgetList[ TEXTEDGAD_EXPORTWRAP ],CHECKBOX_CHECKED)   
     comp.fixedFont:=Gets(self.gadgetList[ TEXTEDGAD_FIXEDFONT ],CHECKBOX_CHECKED)   
     comp.flow:=Gets(self.gadgetList[ TEXTEDGAD_FLOW ],CHOOSER_SELECTED)   
@@ -329,15 +389,26 @@ PROC editSettings(comp:PTR TO textEditorObject) OF textEditorSettingsForm
     comp.spacesPerTab:=Gets(self.gadgetList[ TEXTEDGAD_SPACESPERTAB ],INTEGER_NUMBER)   
     comp.tabKeyPolicy:=Gets(self.gadgetList[ TEXTEDGAD_TABTYPE ],CHOOSER_SELECTED)   
     comp.readOnly:=Gets(self.gadgetList[ TEXTEDGAD_READONLY ],CHECKBOX_CHECKED)   
+    comp.horizScroll:=Gets(self.gadgetList[ TEXTEDGAD_HORIZSCROLL ],CHECKBOX_CHECKED)   
+
+    selscroll:=Gets(self.gadgetList[ TEXTEDGAD_LINKTOVSCROLL ],CHOOSER_SELECTED)
+
+    comp.linkToVScroll:=0
+    FOR i:=0 TO scrollgads.count()-1
+      gad:=scrollgads.item(i)
+      selscroll--
+      IF selscroll=0 THEN comp.linkToVScroll:=gad.id
+    ENDFOR
   ENDIF
+  END scrollgads
 ENDPROC res=MR_OK
 
 EXPORT PROC createPreviewObject(scr) OF textEditorObject
-  DEF tempbase
+  DEF tempbase=0
   self.previewObject:=0
   IF (texteditorbase)
     tempbase:=textfieldbase
-    textfieldbase:=texteditorbase
+    textfieldbase:=texteditorbase   
     
     self.previewObject:=NewObjectA( TextEditor_GetClass(), NIL,[TAG_IGNORE,0,
       GA_ID, self.id,
@@ -350,28 +421,32 @@ EXPORT PROC createPreviewObject(scr) OF textEditorObject
       GA_TEXTEDITOR_LINEENDINGEXPORT, ListItem([LINEENDING_LF,LINEENDING_CR,LINEENDING_CRLF,LINEENDING_ASIMPORT],self.lineEndingExport),
       GA_TEXTEDITOR_SHOWLINENUMBERS, self.showLineNumbers,
       GA_TEXTEDITOR_SPACESPERTAB,self.spacesPerTab,
+      GA_TEXTEDITOR_HORIZONTALSCROLL, self.horizScroll,
       GA_TEXTEDITOR_TABKEYPOLICY, ListItem([GV_TEXTEDITOR_TABKEY_INDENTSLINE,GV_TEXTEDITOR_TABKEY_INDENTSAFTER],self.tabKeyPolicy),
       TAG_END])
   ENDIF
   IF self.previewObject=0 THEN self.previewObject:=self.createErrorObject(scr)
-  textfieldbase:=tempbase
-  
-  self.previewChildAttrs:=[
-    LAYOUT_MODIFYCHILD, self.previewObject,
-    CHILD_NOMINALSIZE, self.nominalSize,
-    CHILD_NODISPOSE, FALSE,
-    CHILD_MINWIDTH, self.minWidth,
-    CHILD_MINHEIGHT, self.minHeight,
-    CHILD_MAXWIDTH, self.maxWidth,
-    CHILD_MAXHEIGHT, self.maxHeight,
-    CHILD_WEIGHTEDWIDTH, self.weightedWidth,
-    CHILD_WEIGHTEDHEIGHT,self.weightedHeight,
-    CHILD_SCALEWIDTH, self.scaleWidth,
-    CHILD_SCALEHEIGHT, self.scaleHeight,
-    CHILD_NOMINALSIZE, self.nominalSize,
-    CHILD_WEIGHTMINIMUM, self.weightMinimum,
-    IF self.weightBar THEN LAYOUT_WEIGHTBAR ELSE TAG_IGNORE, 1,
-    TAG_END]
+  IF tempbase THEN textfieldbase:=tempbase
+
+  self.makePreviewChildAttrs(0)  
+ENDPROC
+
+EXPORT PROC updatePreviewObject() OF textEditorObject
+  DEF map,maptarget:PTR TO reactionObject
+
+  IF self.linkToVScroll
+    map:=[GA_TEXTEDITOR_PROP_FIRST, SCROLLER_TOP,
+      GA_TEXTEDITOR_PROP_ENTRIES, SCROLLER_TOTAL,
+      GA_TEXTEDITOR_PROP_VISIBLE, SCROLLER_VISIBLE,
+      TAG_DONE]
+      maptarget:=self.parent.findReactionObject(self.linkToVScroll)
+  ELSE
+    map:=0
+    maptarget:=0
+  ENDIF
+  IF map THEN SetGadgetAttrsA(self.previewObject,0,0,[ICA_MAP,map,TAG_DONE])
+  IF maptarget THEN SetGadgetAttrsA(self.previewObject,0,0,[ICA_TARGET,maptarget.previewObject,TAG_DONE])
+
 ENDPROC
 
 EXPORT PROC create(parent) OF textEditorObject
@@ -387,6 +462,8 @@ EXPORT PROC create(parent) OF textEditorObject
   self.spacesPerTab:=2
   self.tabKeyPolicy:=1
   self.readOnly:=0
+  self.horizScroll:=TRUE
+  self.linkToVScroll:=0
   self.libsused:=[TYPE_TEXTEDITOR]
 ENDPROC
 
@@ -416,7 +493,9 @@ EXPORT PROC serialiseData() OF textEditorObject IS
   makeProp(showLineNumbers,FIELDTYPE_CHAR),
   makeProp(spacesPerTab,FIELDTYPE_INT),
   makeProp(tabKeyPolicy,FIELDTYPE_CHAR),
-  makeProp(readOnly,FIELDTYPE_CHAR)
+  makeProp(readOnly,FIELDTYPE_CHAR),
+  makeProp(horizScroll,FIELDTYPE_CHAR),
+  makeProp(linkToVScroll,FIELDTYPE_INT)
 ]
 
 EXPORT PROC genCodeProperties(srcGen:PTR TO srcGen) OF textEditorObject
@@ -439,6 +518,23 @@ EXPORT PROC genCodeProperties(srcGen:PTR TO srcGen) OF textEditorObject
   ELSE
     srcGen.componentProperty('GA_TEXTEDITOR_TabKeyPolicy',ListItem(['GV_TEXTEDITOR_TABKEY_INDENTSLINE','GV_TEXTEDITOR_TABKEY_INDENTSAFTER'],self.tabKeyPolicy),FALSE)
   ENDIF
+ENDPROC
+
+EXPORT PROC genCodeMaps(header, srcGen:PTR TO srcGen) OF textEditorObject
+  DEF maptarget
+  IF self.linkToVScroll
+    maptarget:=self.parent.findReactionObject(self.linkToVScroll)
+  ELSE
+    maptarget:=0
+  ENDIF
+  IF maptarget
+    srcGen.setIcaMap(header,'GA_TEXTEDITOR_Prop_First, SCROLLER_Top, GA_TEXTEDITOR_Prop_Entries, SCROLLER_Total, GA_TEXTEDITOR_Prop_Visible, SCROLLER_Visible',self,maptarget)
+  ENDIF
+ENDPROC
+
+EXPORT PROC genCodeChildProperties(srcGen:PTR TO srcGen) OF textEditorObject
+  srcGen.componentAddChildLabel(self.label)
+  SUPER self.genCodeChildProperties(srcGen)
 ENDPROC
 
 EXPORT PROC hasCreateMacro() OF textEditorObject IS FALSE ->create macro was missing from EVO modules

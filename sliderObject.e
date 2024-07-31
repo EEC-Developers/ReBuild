@@ -16,9 +16,10 @@ OPT MODULE, OSVERSION=37
         'libraries/gadtools',
         'intuition/intuition',
         'intuition/imageclass',
+        'intuition/icclass',
         'intuition/gadgetclass'
 
-  MODULE '*reactionObject','*reactionForm','*sourceGen','*validator'
+  MODULE '*reactionObject','*reactionForm','*sourceGen','*validator','*integerObject','*stringlist'
 
 EXPORT ENUM SLDGAD_IDENT, SLDGAD_NAME, SLDGAD_HINT, SLDGAD_MIN, SLDGAD_MAX, SLDGAD_LEVEL, SLDGAD_TICKS,SLDGAD_TICKSIZE,
       SLDGAD_MAXLEN, SLDGAD_SHORTTICKS,
@@ -317,6 +318,7 @@ PROC end() OF sliderSettingsForm
   freeChooserLabels( self.labels3 )
   END self.gadgetList[NUM_SLD_GADS]
   END self.gadgetActions[NUM_SLD_GADS]
+  DisposeObject(self.windowObj)
 ENDPROC
 
 EXPORT PROC canClose(modalRes) OF sliderSettingsForm
@@ -400,44 +402,32 @@ EXPORT PROC createPreviewObject(scr) OF sliderObject
     SliderEnd
   IF self.previewObject=0 THEN self.previewObject:=self.createErrorObject(scr)
 
-  IF StrLen(self.name)>0
-    self.previewChildAttrs:=[
-      LAYOUT_MODIFYCHILD, self.previewObject,
-      CHILD_LABEL, LabelObject,
-        LABEL_TEXT, self.name,
-      LabelEnd,
-      CHILD_NOMINALSIZE, self.nominalSize,
-      CHILD_NODISPOSE, FALSE,
-      CHILD_MINWIDTH, self.minWidth,
-      CHILD_MINHEIGHT, self.minHeight,
-      CHILD_MAXWIDTH, self.maxWidth,
-      CHILD_MAXHEIGHT, self.maxHeight,
-      CHILD_WEIGHTEDWIDTH, self.weightedWidth,
-      CHILD_WEIGHTEDHEIGHT,self.weightedHeight,
-      CHILD_SCALEWIDTH, self.scaleWidth,
-      CHILD_SCALEHEIGHT, self.scaleHeight,
-      CHILD_NOMINALSIZE, self.nominalSize,
-      CHILD_WEIGHTMINIMUM, self.weightMinimum,
-      IF self.weightBar THEN LAYOUT_WEIGHTBAR ELSE TAG_IGNORE, 1,
-      TAG_END]
-  ELSE
-    self.previewChildAttrs:=[
-      LAYOUT_MODIFYCHILD, self.previewObject,
-      CHILD_NOMINALSIZE, self.nominalSize,
-      CHILD_NODISPOSE, FALSE,
-      CHILD_MINWIDTH, self.minWidth,
-      CHILD_MINHEIGHT, self.minHeight,
-      CHILD_MAXWIDTH, self.maxWidth,
-      CHILD_MAXHEIGHT, self.maxHeight,
-      CHILD_WEIGHTEDWIDTH, self.weightedWidth,
-      CHILD_WEIGHTEDHEIGHT,self.weightedHeight,
-      CHILD_SCALEWIDTH, self.scaleWidth,
-      CHILD_SCALEHEIGHT, self.scaleHeight,
-      CHILD_NOMINALSIZE, self.nominalSize,
-      CHILD_WEIGHTMINIMUM, self.weightMinimum,
-      IF self.weightBar THEN LAYOUT_WEIGHTBAR ELSE TAG_IGNORE, 1,
-      TAG_END]
-  ENDIF
+  self.makePreviewChildAttrs(self.name)
+ENDPROC
+
+EXPORT PROC updatePreviewObject() OF sliderObject
+  DEF i,comp:PTR TO reactionObject
+  DEF map=0,maptarget=0:PTR TO reactionObject
+  DEF linkedgads:PTR TO stdlist
+  DEF root:PTR TO reactionObject
+
+  NEW linkedgads.stdlist(10)
+
+  root:=self
+  WHILE root.parent DO root:=root.parent
+
+  root.findObjectsByType(linkedgads,TYPE_INTEGER) 
+  FOR i:=0 TO linkedgads.count()-1
+    comp:=linkedgads.item(i)
+    IF comp::integerObject.linkToSlider=self.id
+      map:=[SLIDER_LEVEL, INTEGER_NUMBER,TAG_DONE]
+      maptarget:=comp
+    ENDIF
+  ENDFOR
+  END linkedgads
+
+  IF map THEN SetGadgetAttrsA(self.previewObject,0,0,[ICA_MAP,map,TAG_DONE])
+  IF maptarget THEN SetGadgetAttrsA(self.previewObject,0,0,[ICA_TARGET,maptarget.previewObject,TAG_DONE])
 ENDPROC
 
 EXPORT PROC create(parent) OF sliderObject
@@ -508,6 +498,32 @@ ENDPROC
 EXPORT PROC genCodeChildProperties(srcGen:PTR TO srcGen) OF sliderObject
   srcGen.componentAddChildLabel(self.name)
   SUPER self.genCodeChildProperties(srcGen)
+ENDPROC
+
+EXPORT PROC genCodeMaps(header, srcGen:PTR TO srcGen) OF sliderObject
+  DEF i,comp:PTR TO reactionObject
+  DEF map=0,maptarget=0:PTR TO reactionObject
+  DEF linkedgads:PTR TO stdlist
+  DEF root:PTR TO reactionObject
+
+  NEW linkedgads.stdlist(10)
+
+  root:=self
+  WHILE root.parent DO root:=root.parent
+
+  root.findObjectsByType(linkedgads,TYPE_INTEGER) 
+  FOR i:=0 TO linkedgads.count()-1
+    comp:=linkedgads.item(i)
+    IF comp::integerObject.linkToSlider=self.id
+      map:='SLIDER_Level, INTEGER_Number'
+      maptarget:=comp
+    ENDIF
+  ENDFOR
+  END linkedgads
+
+  IF maptarget
+    srcGen.setIcaMap(header, map,self,maptarget)
+  ENDIF
 ENDPROC
 
 EXPORT PROC getTypeName() OF sliderObject

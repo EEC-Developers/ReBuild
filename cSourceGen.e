@@ -1,16 +1,16 @@
 OPT MODULE,LARGE
 
   MODULE 'images/drawlist'
-  MODULE '*fileStreamer','*sourceGen','*reactionObject','*windowObject','*menuObject','*stringlist','*screenObject'
+  MODULE '*baseStreamer','*sourceGen','*reactionObject','*windowObject','*menuObject','*stringlist','*screenObject'
   MODULE '*chooserObject','*clickTabObject','*radioObject','*listBrowserObject','*tabsObject','*reactionListObject',
-         '*drawListObject','*speedBarObject','*listViewObject','*rexxObject','*requesterObject'
+         '*drawListObject','*speedBarObject','*listViewObject','*rexxObject','*requesterObject','*requesterItemObject'
 
 EXPORT OBJECT cSrcGen OF srcGen
 ENDOBJECT
 
 ENUM ENUM_IDS, ENUM_IDENTS, ENUM_IDXS
 
-PROC create(fser:PTR TO fileStreamer, libsused:PTR TO CHAR,definitionOnly,useIds,useMacros) OF cSrcGen
+PROC create(fser:PTR TO baseStreamer, libsused:PTR TO CHAR,definitionOnly,useIds,useMacros) OF cSrcGen
   SUPER self.create(fser,libsused,definitionOnly,useIds,useMacros)
   self.type:=CSOURCE_GEN
   self.stringDelimiter:=34
@@ -71,7 +71,7 @@ ENDPROC
 
 PROC genHeader(screenObject:PTR TO screenObject,rexxObject:PTR TO rexxObject, requesterObject:PTR TO requesterObject, 
                 windowItems:PTR TO stdlist, windowLayouts:PTR TO stdlist, sharedPort) OF cSrcGen
-  DEF tempStr[200]:STRING
+  DEF tempStr[400]:STRING
   DEF menuItem:PTR TO menuItem
   DEF itemName[200]:STRING
   DEF commKey[10]:STRING
@@ -81,7 +81,7 @@ PROC genHeader(screenObject:PTR TO screenObject,rexxObject:PTR TO rexxObject, re
   DEF layoutObject:PTR TO reactionObject
   DEF listObjects:PTR TO stdlist
   DEF listObject:PTR TO reactionObject
-  DEF reqItem:PTR TO requesterItem
+  DEF reqItem:PTR TO requesterItemObject
   DEF bodyText
 
   hasarexx:=(rexxObject.commands.count()>0) AND (StrLen(rexxObject.hostName)>0)
@@ -152,7 +152,7 @@ PROC genHeader(screenObject:PTR TO screenObject,rexxObject:PTR TO rexxObject, re
 
   IF self.libsused[TYPE_VIRTUAL] THEN self.writeLine('#include <proto/virtual.h>')
   IF self.libsused[TYPE_SKETCH] THEN self.writeLine('#include <proto/sketchboard.h>')
-  IF requesterObject.requesterItems.count()>0
+  IF requesterObject.children.count()>0
     self.writeLine('#include <proto/requester.h>')
     self.writeLine('#include <classes/requester.h>')
   ENDIF
@@ -161,6 +161,7 @@ PROC genHeader(screenObject:PTR TO screenObject,rexxObject:PTR TO rexxObject, re
   self.writeLine('#include <libraries/gadtools.h>')
   self.writeLine('#include <reaction/reaction.h>')
   self.writeLine('#include <intuition/gadgetclass.h>')
+  self.writeLine('#include <intuition/icclass.h>')
   self.writeLine('#include <reaction/reaction_macros.h>')
   self.writeLine('#include <classes/window.h>')
   self.writeLine('#include <exec/memory.h>')
@@ -486,9 +487,24 @@ PROC genHeader(screenObject:PTR TO screenObject,rexxObject:PTR TO rexxObject, re
     ENDIF
   ENDIF
 
-  FOR i:=0 TO requesterObject.requesterItems.count()-1
-    reqItem:=requesterObject.requesterItems.item(i)
-    StringF(tempStr,'int requester\d(Object *reactionWindow)\n',i)
+  FOR i:=0 TO requesterObject.children.count()-1
+    reqItem:=requesterObject.children.item(i)  
+    StrCopy(tempStr,reqItem.ident)
+    LowerStr(tempStr)
+    StringF(tempStr,'int \s(Object *reactionWindow',tempStr)
+    IF reqItem.titleParam
+      StrAdd(tempStr,',STRPTR titleText')
+    ENDIF
+
+    IF reqItem.gadgetsParam
+      StrAdd(tempStr,',STRPTR gadgetsText')
+    ENDIF
+    
+    IF reqItem.bodyParam
+      StrAdd(tempStr,',STRPTR bodyText')
+    ENDIF
+    StrAdd(tempStr,')')
+    
     self.writeLine(tempStr)
     self.writeLine('{')
     self.writeLine('  Object *reqobj;')
@@ -498,14 +514,45 @@ PROC genHeader(screenObject:PTR TO screenObject,rexxObject:PTR TO rexxObject, re
 
     self.writeLine('  GetAttr(WINDOW_Window, reactionWindow, &win);')
     bodyText:=reqItem.bodyText.makeTextString('\\n')
-	  StringF(tempStr,'  reqobj = NewObject(REQUESTER_GetClass(), NULL, REQ_Type, \s, REQ_Image, \s, REQ_TitleText, \q\s\q, REQ_BodyText,\q\s\q, REQ_GadgetText, \q\s\q, TAG_DONE);',
-                            ListItem(['REQTYPE_INFO','REQTYPE_INTEGER','REQTYPE_STRING'],reqItem.reqType),
-                            ListItem(['REQIMAGE_DEFAULT', 'REQIMAGE_INFO', 'REQIMAGE_WARNING', 'REQIMAGE_ERROR', 'REQIMAGE_QUESTION', 'REQIMAGE_INSERTDISK'],reqItem.image),
-                            reqItem.titleText,
-                            bodyText,
-                            reqItem.gadgetsText)
-    Dispose(bodyText)
-    self.writeLine(tempStr)
+      
+	  StringF(tempStr,'  reqobj = NewObject(REQUESTER_GetClass(), NULL, REQ_Type, \s, REQ_Image, \s,',
+                              ListItem(['REQTYPE_INFO','REQTYPE_INTEGER','REQTYPE_STRING'],reqItem.reqType),
+                              ListItem(['REQIMAGE_DEFAULT', 'REQIMAGE_INFO', 'REQIMAGE_WARNING', 'REQIMAGE_ERROR', 'REQIMAGE_QUESTION', 'REQIMAGE_INSERTDISK'],reqItem.image))
+    self.writeLine(tempStr)   
+	  StringF(tempStr,'       REQ_TitleText, \s\s\s,',
+                      IF reqItem.titleParam THEN '' ELSE '\q',
+                      IF reqItem.titleParam THEN 'titleText' ELSE reqItem.titleText,
+                      IF reqItem.titleParam THEN '' ELSE '\q')
+    self.writeLine(tempStr)   
+    StringF(tempStr,'       REQ_BodyText,\s\s\s,',
+                      IF reqItem.bodyParam  THEN '' ELSE '\q',
+                      IF reqItem.bodyParam THEN 'bodyText' ELSE bodyText,
+                      IF reqItem.bodyParam THEN '' ELSE '\q')
+    self.writeLine(tempStr)   
+    
+    StringF(tempStr,'       REQ_GadgetText, \s\s\s,',
+                      IF reqItem.gadgetsParam THEN '' ELSE '\q',
+                      IF reqItem.gadgetsParam THEN 'gadgetsText' ELSE reqItem.gadgetsText,
+                      IF reqItem.gadgetsParam THEN '' ELSE '\q')
+    self.writeLine(tempStr)   
+    IF reqItem.invisible
+      SELECT reqItem.reqType
+        CASE 1
+          self.writeLine('       REQI_Invisible, TRUE,')
+        CASE 2
+          self.writeLine('       REQS_Invisible, TRUE,')
+      ENDSELECT
+    ENDIF
+    SELECT reqItem.reqType
+      CASE 1
+        StringF(tempStr,'       REQI_MaxChars, \d,',IF reqItem.maxChars>10 THEN 10 ELSE reqItem.maxChars)
+        self.writeLine(tempStr)   
+      CASE 2
+        StringF(tempStr,'       REQS_MaxChars, \d,',reqItem.maxChars)
+        self.writeLine(tempStr)   
+    ENDSELECT
+    self.writeLine('       TAG_DONE);')
+    DisposeLink(bodyText)
     self.writeLine('  if (reqobj)')
     self.writeLine('  {')
     self.writeLine('    res=DoMethod(reqobj, RM_OPENREQ, NULL, win, NULL);')
@@ -559,7 +606,7 @@ PROC genHeader(screenObject:PTR TO screenObject,rexxObject:PTR TO rexxObject, re
   IF self.libsused[TYPE_VIRTUAL] THEN self.writeLine('               *VirtualBase = NULL,')
   IF self.libsused[TYPE_SKETCH] THEN self.writeLine('               *SketchBoardBase = NULL,')
   IF self.libsused[TYPE_TABS] THEN self.writeLine('               *TabsBase = NULL,')
-  IF requesterObject.requesterItems.count()>0 THEN self.writeLine('               *RequesterBase = NULL,')
+  IF requesterObject.children.count()>0 THEN self.writeLine('               *RequesterBase = NULL,')
  
   self.writeLine('               *GadToolsBase = NULL,')
   self.writeLine('               *LayoutBase = NULL,')
@@ -734,7 +781,7 @@ PROC genHeader(screenObject:PTR TO screenObject,rexxObject:PTR TO rexxObject, re
   ENDIF
 
   IF self.libsused[TYPE_LISTVIEW]
-    self.writeLine('  if( !(ListViewBase = (struct Library*) OpenLibrary("gadgest/listview.gadget",0L) ) ) return 0;')
+    self.writeLine('  if( !(ListViewBase = (struct Library*) OpenLibrary("gadgets/listview.gadget",0L) ) ) return 0;')
   ENDIF
 
   IF self.libsused[TYPE_VIRTUAL]
@@ -748,7 +795,7 @@ PROC genHeader(screenObject:PTR TO screenObject,rexxObject:PTR TO rexxObject, re
   IF self.libsused[TYPE_TABS]
     self.writeLine('  if( !(TabsBase = (struct Library*) OpenLibrary("gadgets/tabs.gadget",0L) ) ) return 0;')
   ENDIF
-  IF requesterObject.requesterItems.count()>0
+  IF requesterObject.children.count()>0
     self.writeLine('  if( !(RequesterBase = (struct Library*) OpenLibrary("classes/requester.class",0L) ) ) return 0;')
   ENDIF
 
@@ -829,7 +876,7 @@ PROC genHeader(screenObject:PTR TO screenObject,rexxObject:PTR TO rexxObject, re
   IF hasarexx
     self.writeLine('  if (ARexxBase) CloseLibrary( (struct Library *)ARexxBase );')
   ENDIF
-  IF requesterObject.requesterItems.count()>0
+  IF requesterObject.children.count()>0
     self.writeLine('  if (RequesterBase) CloseLibrary( (struct Library *)RequesterBase );')
   ENDIF
 
@@ -1016,7 +1063,7 @@ PROC genWindowHeader(count, windowObject:PTR TO windowObject, menuObject:PTR TO 
 
         hintText:=reactionObject.hintText.makeTextString('\\n')
         StringF(tempStr,'    {\s,-1,\q\s\q,0},',itemName,hintText)
-        Dispose(hintText)
+        DisposeLink(hintText)
         self.writeLine(tempStr)
       ENDIF
     ENDFOR
@@ -1026,6 +1073,7 @@ PROC genWindowHeader(count, windowObject:PTR TO windowObject, menuObject:PTR TO 
     
     listObjects.clear()
   ENDIF
+  layoutObject.genComponentMaps(TRUE, self)
 
   layoutObject.findObjectsByType(listObjects,TYPE_CHOOSER)
   layoutObject.findObjectsByType(listObjects,TYPE_RADIO)
@@ -1190,6 +1238,8 @@ PROC genWindowFooter(count, windowObject:PTR TO windowObject, menuObject:PTR TO 
 
   StringF(tempStr,'  main_gadgets[\d] = 0;',count)
   self.writeLine(tempStr)
+  
+  layoutObject.genComponentMaps(FALSE, self)
   
   StrCopy(windowName,windowObject.ident)
   LowerStr(windowName)
@@ -1510,3 +1560,29 @@ PROC makeList2(start:PTR TO CHAR,list:PTR TO stringlist) OF cSrcGen
   ENDFOR
   StrAdd(res,' NULL };') 
 ENDPROC res
+
+PROC setIcaMap(header,mapText,mapSource:PTR TO reactionObject,mapTarget:PTR TO reactionObject) OF cSrcGen
+  DEF tempStr1[255]:STRING
+  DEF tempStr2[255]:STRING
+  DEF mapName[100]:STRING
+  StrCopy(tempStr2,mapSource.ident)
+  LowerStr(tempStr2)
+
+  IF header
+    StringF(tempStr1,'  struct TagItem map_\s',tempStr2)
+    StringF(tempStr2,'[] = { \s, TAG_DONE };',mapText) 
+    StrAdd(tempStr1,tempStr2)
+    
+    self.writeLine(tempStr1)
+  ELSE
+    self.writeLine('')
+    StringF(mapName,'map_\s',tempStr2) 
+    StringF(tempStr1,'  SetGadgetAttrs(main_gadgets[\s],0,0,ICA_MAP,\s,TAG_DONE);',tempStr2,mapName)
+    
+    self.writeLine(tempStr1)
+    StrCopy(tempStr1,mapTarget.ident)
+    LowerStr(tempStr1)
+    StringF(tempStr1,'  SetGadgetAttrs(main_gadgets[\s],0,0,ICA_TARGET,main_gadgets[\s],TAG_DONE);',tempStr2,tempStr1)
+    self.writeLine(tempStr1)
+  ENDIF
+ENDPROC
