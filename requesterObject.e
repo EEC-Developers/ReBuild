@@ -42,6 +42,11 @@ ENDPROC
 
 EXPORT PROC allowChildren() OF requesterObject IS -1
 
+EXPORT PROC serialiseData() OF requesterObject IS
+[
+  0,0,FIELDTYPE_CHAR    //dummy field since we dont have any
+]
+
 EXPORT PROC createRequesterObject(parent)
   DEF requester:PTR TO requesterObject
   
